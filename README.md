@@ -1,5 +1,8 @@
 # EasyLab
 
+[![CI](https://github.com/MuratAlkan06/EasyLab/actions/workflows/ci.yml/badge.svg)](https://github.com/MuratAlkan06/EasyLab/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Upload a batch of similar lab images, label regions on one reference image, and let AI extract the same fields across all of them into a review table and CSV export.
 
 > **Core idea:** Label one image once → AI learns what each region means → AI finds and extracts the same fields across the rest.
