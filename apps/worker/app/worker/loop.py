@@ -1,6 +1,7 @@
 import asyncio
 import os
 import socket
+
 import asyncpg
 import structlog
 
@@ -10,9 +11,9 @@ from app.worker.handlers import dispatch
 log = structlog.get_logger()
 
 WORKER_ID = f"{socket.gethostname()}-{os.getpid()}"
-POLL_INTERVAL = 1.0       # seconds between polls when idle
+POLL_INTERVAL = 1.0  # seconds between polls when idle
 HEARTBEAT_INTERVAL = 5.0  # seconds between heartbeat updates
-STALE_THRESHOLD = 180     # seconds before a running job is considered stale
+STALE_THRESHOLD = 180  # seconds before a running job is considered stale
 
 _kick_event = asyncio.Event()
 
@@ -61,9 +62,7 @@ async def _claim_job(pool: asyncpg.Pool) -> dict | None:
 
 
 async def _heartbeat(pool: asyncpg.Pool, job_id: str) -> None:
-    await pool.execute(
-        "UPDATE jobs SET heartbeat_at = now() WHERE id = $1", job_id
-    )
+    await pool.execute("UPDATE jobs SET heartbeat_at = now() WHERE id = $1", job_id)
 
 
 async def worker_loop() -> None:
@@ -77,7 +76,7 @@ async def worker_loop() -> None:
         if not job:
             try:
                 await asyncio.wait_for(_kick_event.wait(), timeout=POLL_INTERVAL)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             finally:
                 _kick_event.clear()
