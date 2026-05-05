@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+apps/web/.next/
+apps/web/out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+apps/worker/.venv/
+dist/
+build/
+
+# Env files — never commit secrets
+.env
+.env.local
+.env.*.local
+apps/web/.env.local
+apps/worker/.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# Claude Code local config
+.claude/

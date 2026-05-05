@@ -1,0 +1,10 @@
+{
+  "name": "easylab",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:worker": "pnpm --filter worker dev",
+    "build:web": "pnpm --filter web build"
+  },
+  "packageManager": "pnpm@10.33.3"
+}
