@@ -1,13 +1,14 @@
 import asyncio
 from contextlib import asynccontextmanager
-import structlog
 
+import structlog
 from fastapi import FastAPI
-from app.db import close_pool, get_pool
-from app.worker.loop import worker_loop
-from app.settings import settings
+
 from app.api.health import router as health_router
 from app.api.internal import router as internal_router
+from app.db import close_pool, get_pool
+from app.settings import settings
+from app.worker.loop import worker_loop
 
 log = structlog.get_logger()
 
@@ -16,7 +17,9 @@ _worker_tasks: list[asyncio.Task] = []
 
 def _run_migrations() -> None:
     from alembic.config import Config as AlembicConfig
+
     from alembic import command as alembic_command
+
     cfg = AlembicConfig("alembic.ini")
     alembic_command.upgrade(cfg, "head")
 

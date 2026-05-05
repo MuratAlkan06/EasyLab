@@ -1,4 +1,5 @@
 import asyncpg
+
 from app.jobs.fake import handle_fake
 from app.jobs.process_batch import handle_process_batch
 
