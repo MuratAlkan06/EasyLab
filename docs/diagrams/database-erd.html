@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EasyLab — Database ERD</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f1117;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      padding: 48px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 12px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 36px;
+    }
+
+    .erd {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: auto auto auto auto;
+      gap: 24px;
+      max-width: 1200px;
+      width: 100%;
+    }
+
+    .table {
+      background: #1a2332;
+      border: 1.5px solid #334155;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .table.core   { border-color: #3b82f6; }
+    .table.job    { border-color: #22c55e; }
+    .table.result { border-color: #f97316; }
+    .table.support { border-color: #8b5cf6; }
+
+    .table-header {
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #f8fafc;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .table.core   .table-header { background: #1e3a5f; }
+    .table.job    .table-header { background: #14532d; }
+    .table.result .table-header { background: #431407; }
+    .table.support .table-header { background: #2d1b69; }
+
+    .table-tag {
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      opacity: 0.65;
+      font-weight: 500;
+    }
+
+    .col-list {
+      padding: 8px 0;
+    }
+    .col-row {
+      padding: 5px 14px;
+      font-size: 11.5px;
+      font-family: ui-monospace, monospace;
+      color: #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .col-row:nth-child(even) {
+      background: rgba(255,255,255,0.02);
+    }
+    .col-name { color: #e2e8f0; }
+    .col-name.pk { color: #fbbf24; font-weight: 600; }
+    .col-name.fk { color: #60a5fa; }
+    .col-type {
+      font-size: 10px;
+      color: #64748b;
+    }
+    .col-row .badge {
+      font-size: 8px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      margin-left: 4px;
+      display: inline-block;
+    }
+    .b-pk { background: #fbbf24; color: #422006; }
+    .b-fk { background: #60a5fa; color: #1e3a8a; }
+    .b-uq { background: #a78bfa; color: #2e1065; }
+
+    .relationships {
+      margin-top: 36px;
+      max-width: 1200px;
+      width: 100%;
+      background: #1a2332;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 18px 22px;
+    }
+    .relationships h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .rel {
+      font-size: 12px;
+      color: #94a3b8;
+      padding: 4px 0;
+      font-family: ui-monospace, monospace;
+    }
+    .rel strong { color: #fbbf24; }
+    .rel .arrow { color: #60a5fa; padding: 0 4px; }
+
+    .legend {
+      margin-top: 24px;
+      display: flex;
+      gap: 20px;
+      font-size: 11px;
+      color: #94a3b8;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+  </style>
+</head>
+<body>
+  <h1>EasyLab — Database Schema (ERD)</h1>
+  <div class="subtitle">9 tables in Supabase Postgres · all FKs cascade on delete</div>
+
+  <div class="erd">
+
+    <!-- Row 1: ownership chain -->
+    <div class="table support" style="grid-column:1; grid-row:1;">
+      <div class="table-header">workspaces <span class="table-tag">Identity</span></div>
+      <div class="col-list">
+        <div class="col-row"><span class="col-name pk">id <span class="badge b-pk">PK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+      </div>
+    </div>
+
+    <div class="table core" style="grid-column:2; grid-row:1;">
+      <div class="table-header">projects <span class="table-tag">Container</span></div>
+      <div class="col-list">
+        <div class="col-row"><span class="col-name pk">id <span class="badge b-pk">PK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name fk">workspace_id <span class="badge b-fk">FK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name">name</span><span class="col-type">text</span></div>
+        <div class="col-row"><span class="col-name fk">reference_image_id <span class="badge b-fk">FK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name">status</span><span class="col-type">draft|annotated|processing|done</span></div>
+        <div class="col-row"><span class="col-name">template_quality</span><span class="col-type">null|degraded</span></div>
+      </div>
+    </div>
+
+    <div class="table core" style="grid-column:3; grid-row:1;">
+      <div class="table-header">images <span class="table-tag">Files</span></div>
+      <div class="col-list">
+        <div class="col-row"><span class="col-name pk">id <span class="badge b-pk">PK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name fk">project_id <span class="badge b-fk">FK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name">storage_path</span><span class="col-type">text</span></div>
+        <div class="col-row"><span class="col-name">thumbnail_path</span><span class="col-type">text</span></div>
+        <div class="col-row"><span class="col-name">filename</span><span class="col-type">text</span></div>
+        <div class="col-row"><span class="col-name">width_px / height_px</span><span class="col-type">int</span></div>
+        <div class="col-row"><span class="col-name">status</span><span class="col-type">pending_upload..done|failed</span></div>
+        <div class="col-row"><span class="col-name">is_reference</span><span class="col-type">bool <span class="badge b-uq">UQ</span></span></div>
+      </div>
+    </div>
+
+    <!-- Row 2: template + jobs -->
+    <div class="table core" style="grid-column:1; grid-row:2;">
+      <div class="table-header">template_fields <span class="table-tag">User labels</span></div>
+      <div class="col-list">
+        <div class="col-row"><span class="col-name pk">id <span class="badge b-pk">PK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name fk">project_id <span class="badge b-fk">FK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name">field_name</span><span class="col-type">text <span class="badge b-uq">UQ</span></span></div>
+        <div class="col-row"><span class="col-name">display_order</span><span class="col-type">int</span></div>
+        <div class="col-row"><span class="col-name">reference_box</span><span class="col-type">jsonb {x,y,w,h}</span></div>
+        <div class="col-row"><span class="col-name">semantic_description</span><span class="col-type">text (Stage A)</span></div>
+        <div class="col-row"><span class="col-name">expected_format</span><span class="col-type">jsonb</span></div>
+      </div>
+    </div>
+
+    <div class="table job" style="grid-column:2; grid-row:2;">
+      <div class="table-header">jobs <span class="table-tag">Worker queue</span></div>
+      <div class="col-list">
+        <div class="col-row"><span class="col-name pk">id <span class="badge b-pk">PK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name fk">project_id <span class="badge b-fk">FK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name">status</span><span class="col-type">queued..succeeded|failed|cancelled</span></div>
+        <div class="col-row"><span class="col-name">attempts / max_attempts</span><span class="col-type">int</span></div>
+        <div class="col-row"><span class="col-name">progress_done / total</span><span class="col-type">int</span></div>
+        <div class="col-row"><span class="col-name">heartbeat_at</span><span class="col-type">timestamptz</span></div>
+        <div class="col-row"><span class="col-name">paused_until</span><span class="col-type">timestamptz</span></div>
+        <div class="col-row"><span class="col-name">locked_by</span><span class="col-type">text</span></div>
+      </div>
+    </div>
+
+    <div class="table job" style="grid-column:3; grid-row:2;">
+      <div class="table-header">image_tasks <span class="table-tag">Per-image progress</span></div>
+      <div class="col-list">
+        <div class="col-row"><span class="col-name pk">id <span class="badge b-pk">PK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name fk">job_id <span class="badge b-fk">FK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name fk">image_id <span class="badge b-fk">FK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name">status</span><span class="col-type">pending..done|failed|not_found</span></div>
+        <div class="col-row"><span class="col-name">error</span><span class="col-type">text</span></div>
+      </div>
+    </div>
+
+    <!-- Row 3: results -->
+    <div class="table result" style="grid-column:1 / span 2; grid-row:3;">
+      <div class="table-header">cells <span class="table-tag">AI output · write-once</span></div>
+      <div class="col-list">
+        <div class="col-row"><span class="col-name pk">id <span class="badge b-pk">PK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name fk">job_id, project_id, image_id, field_id <span class="badge b-fk">FK</span></span><span class="col-type">unique (job_id, image_id, field_id)</span></div>
+        <div class="col-row"><span class="col-name">raw_text · parsed_value · unit_seen</span><span class="col-type">text · jsonb · text</span></div>
+        <div class="col-row"><span class="col-name">legible</span><span class="col-type">bool</span></div>
+        <div class="col-row"><span class="col-name">box_confidence · value_confidence</span><span class="col-type">numeric(4,3)</span></div>
+        <div class="col-row"><span class="col-name">combined_confidence</span><span class="col-type">written by worker (not generated)</span></div>
+        <div class="col-row"><span class="col-name">status</span><span class="col-type">ok|low_confidence|needs_review|failed</span></div>
+        <div class="col-row"><span class="col-name">detected_box · crop_path</span><span class="col-type">jsonb · text</span></div>
+        <div class="col-row"><span class="col-name">model_versions</span><span class="col-type">jsonb</span></div>
+      </div>
+    </div>
+
+    <div class="table result" style="grid-column:3; grid-row:3;">
+      <div class="table-header">cell_overrides <span class="table-tag">Human layer</span></div>
+      <div class="col-list">
+        <div class="col-row"><span class="col-name pk">id <span class="badge b-pk">PK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name fk">project_id, image_id, field_id <span class="badge b-fk">FK</span></span><span class="col-type">unique (these 3) <span class="badge b-uq">UQ</span></span></div>
+        <div class="col-row"><span class="col-name">corrected_value</span><span class="col-type">jsonb</span></div>
+        <div class="col-row"><span class="col-name">corrected_at</span><span class="col-type">timestamptz</span></div>
+      </div>
+    </div>
+
+    <!-- Row 4: support -->
+    <div class="table support" style="grid-column:1 / span 3; grid-row:4;">
+      <div class="table-header">workspace_quota <span class="table-tag">Spend control · 1:1 with workspace</span></div>
+      <div class="col-list">
+        <div class="col-row"><span class="col-name pk">workspace_id <span class="badge b-pk">PK</span><span class="badge b-fk">FK</span></span><span class="col-type">uuid</span></div>
+        <div class="col-row"><span class="col-name">jobs_today / images_today / tokens_today</span><span class="col-type">int · int · bigint</span></div>
+        <div class="col-row"><span class="col-name">quota_date</span><span class="col-type">date · resets daily</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="relationships">
+    <h3>Relationships (read top to bottom)</h3>
+    <div class="rel"><strong>workspaces</strong><span class="arrow">1—∞</span><strong>projects</strong><span class="arrow">1—∞</span><strong>images</strong></div>
+    <div class="rel"><strong>projects</strong><span class="arrow">1—∞</span><strong>template_fields</strong> (the user's labeled fields)</div>
+    <div class="rel"><strong>projects</strong><span class="arrow">1—∞</span><strong>jobs</strong><span class="arrow">1—∞</span><strong>image_tasks</strong> (one task per image per job)</div>
+    <div class="rel"><strong>jobs × images × template_fields</strong><span class="arrow">→</span><strong>cells</strong> (one cell per tuple — the AI result grid)</div>
+    <div class="rel"><strong>cell_overrides</strong> keyed by <strong>(project, image, field)</strong> — survives job re-runs</div>
+    <div class="rel"><strong>workspaces</strong><span class="arrow">1—1</span><strong>workspace_quota</strong></div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><span class="badge b-pk">PK</span> Primary key</div>
+    <div class="legend-item"><span class="badge b-fk">FK</span> Foreign key (cascade delete)</div>
+    <div class="legend-item"><span class="badge b-uq">UQ</span> Unique constraint</div>
+  </div>
+</body>
+</html>

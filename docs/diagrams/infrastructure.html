@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EasyLab — Infrastructure</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f1117;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 32px;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 48px;
+      letter-spacing: 0.02em;
+    }
+
+    /* ── Layout columns ── */
+    .diagram {
+      display: grid;
+      grid-template-columns: 180px 80px 200px 80px 200px 80px 180px;
+      grid-template-rows: auto 40px auto 40px auto;
+      align-items: center;
+      justify-items: center;
+      gap: 0;
+      width: 100%;
+      max-width: 1060px;
+    }
+
+    /* ── Service boxes ── */
+    .service {
+      border-radius: 12px;
+      padding: 20px 16px;
+      text-align: center;
+      width: 100%;
+    }
+    .service .label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      opacity: 0.6;
+      margin-bottom: 8px;
+    }
+    .service .name {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .service .host {
+      font-size: 11px;
+      opacity: 0.55;
+      margin-bottom: 10px;
+    }
+    .service .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      justify-content: center;
+    }
+    .tag {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 99px;
+      font-weight: 500;
+      opacity: 0.85;
+    }
+
+    /* colour themes */
+    .blue   { background: #1e3a5f; border: 1.5px solid #3b82f6; }
+    .blue .tag   { background: #1d4ed8; color: #bfdbfe; }
+    .purple { background: #2d1b69; border: 1.5px solid #8b5cf6; }
+    .purple .tag { background: #5b21b6; color: #ddd6fe; }
+    .green  { background: #14532d; border: 1.5px solid #22c55e; }
+    .green .tag  { background: #15803d; color: #bbf7d0; }
+    .orange { background: #431407; border: 1.5px solid #f97316; }
+    .orange .tag { background: #c2410c; color: #fed7aa; }
+
+    /* ── Arrow cells ── */
+    .arrow-h {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      position: relative;
+      padding: 0 4px;
+    }
+    .arrow-h svg { width: 100%; height: 32px; overflow: visible; }
+
+    /* ── Vertical arrow / connector ── */
+    .arrow-v {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 40px;
+    }
+    .arrow-v svg { height: 40px; width: 32px; }
+
+    /* ── Storage sub-box ── */
+    .sub {
+      margin-top: 8px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 10px;
+      line-height: 1.6;
+      color: #94a3b8;
+      text-align: left;
+    }
+
+    /* ── Legend ── */
+    .legend {
+      margin-top: 48px;
+      display: flex;
+      gap: 28px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .legend-line {
+      width: 32px;
+      height: 2px;
+    }
+    .solid  { background: #64748b; }
+    .dashed { background: repeating-linear-gradient(90deg,#64748b 0,#64748b 4px,transparent 4px,transparent 8px); }
+
+    /* ── Notes ── */
+    .notes {
+      margin-top: 36px;
+      max-width: 700px;
+      width: 100%;
+    }
+    .note {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+    .note span { color: #f97316; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>EasyLab — Infrastructure Overview</h1>
+
+  <div class="diagram">
+
+    <!-- ROW 1: Browser | → | Next.js | → | FastAPI | → | Gemini -->
+
+    <!-- Browser -->
+    <div class="service blue" style="grid-column:1; grid-row:1;">
+      <div class="label">Client</div>
+      <div class="name">Browser</div>
+      <div class="host">User's machine</div>
+      <div class="tags">
+        <span class="tag">Next.js UI</span>
+        <span class="tag">react-konva</span>
+        <span class="tag">TanStack Query</span>
+      </div>
+    </div>
+
+    <!-- → -->
+    <div class="arrow-h" style="grid-column:2; grid-row:1;">
+      <svg viewBox="0 0 80 32" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="16" x2="68" y2="16" stroke="#3b82f6" stroke-width="1.5"/>
+        <polygon points="68,11 80,16 68,21" fill="#3b82f6"/>
+        <text x="40" y="10" text-anchor="middle" fill="#64748b" font-size="9">HTTPS</text>
+      </svg>
+    </div>
+
+    <!-- Next.js -->
+    <div class="service purple" style="grid-column:3; grid-row:1;">
+      <div class="label">Frontend + API</div>
+      <div class="name">Next.js 15</div>
+      <div class="host">Vercel</div>
+      <div class="tags">
+        <span class="tag">Route Handlers</span>
+        <span class="tag">Signed URLs</span>
+        <span class="tag">Job Enqueue</span>
+        <span class="tag">CSV Export</span>
+      </div>
+    </div>
+
+    <!-- → -->
+    <div class="arrow-h" style="grid-column:4; grid-row:1;">
+      <svg viewBox="0 0 80 32" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="16" x2="68" y2="16" stroke="#8b5cf6" stroke-width="1.5"/>
+        <polygon points="68,11 80,16 68,21" fill="#8b5cf6"/>
+        <text x="40" y="10" text-anchor="middle" fill="#64748b" font-size="9">Internal</text>
+      </svg>
+    </div>
+
+    <!-- FastAPI -->
+    <div class="service green" style="grid-column:5; grid-row:1;">
+      <div class="label">AI Worker</div>
+      <div class="name">FastAPI</div>
+      <div class="host">Fly.io (persistent VM)</div>
+      <div class="tags">
+        <span class="tag">Job Queue</span>
+        <span class="tag">Pillow</span>
+        <span class="tag">PaddleOCR</span>
+        <span class="tag">asyncio</span>
+      </div>
+    </div>
+
+    <!-- → -->
+    <div class="arrow-h" style="grid-column:6; grid-row:1;">
+      <svg viewBox="0 0 80 32" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="16" x2="68" y2="16" stroke="#22c55e" stroke-width="1.5"/>
+        <polygon points="68,11 80,16 68,21" fill="#22c55e"/>
+        <text x="40" y="10" text-anchor="middle" fill="#64748b" font-size="9">Gemini API</text>
+      </svg>
+    </div>
+
+    <!-- Gemini -->
+    <div class="service orange" style="grid-column:7; grid-row:1;">
+      <div class="label">AI Models</div>
+      <div class="name">Google Gemini</div>
+      <div class="host">Google AI (external)</div>
+      <div class="tags">
+        <span class="tag">2.5 Pro</span>
+        <span class="tag">2.5 Flash</span>
+      </div>
+    </div>
+
+
+    <!-- ROW 2: vertical arrows from Browser and Next.js down to Supabase -->
+
+    <div style="grid-column:1; grid-row:2; display:flex; align-items:center; justify-content:center;">
+      <svg viewBox="0 0 32 40" height="40" width="32" xmlns="http://www.w3.org/2000/svg">
+        <line x1="16" y1="0" x2="16" y2="28" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <polygon points="11,28 16,40 21,28" fill="#3b82f6"/>
+      </svg>
+    </div>
+
+    <div style="grid-column:3; grid-row:2; display:flex; align-items:center; justify-content:center;">
+      <svg viewBox="0 0 32 40" height="40" width="32" xmlns="http://www.w3.org/2000/svg">
+        <line x1="16" y1="0" x2="16" y2="28" stroke="#8b5cf6" stroke-width="1.5"/>
+        <polygon points="11,28 16,40 21,28" fill="#8b5cf6"/>
+      </svg>
+    </div>
+
+    <div style="grid-column:5; grid-row:2; display:flex; align-items:center; justify-content:center;">
+      <svg viewBox="0 0 32 40" height="40" width="32" xmlns="http://www.w3.org/2000/svg">
+        <line x1="16" y1="0" x2="16" y2="28" stroke="#22c55e" stroke-width="1.5"/>
+        <polygon points="11,28 16,40 21,28" fill="#22c55e"/>
+      </svg>
+    </div>
+
+
+    <!-- ROW 3: labels under vertical arrows -->
+
+    <div style="grid-column:1; grid-row:3; font-size:10px; color:#64748b; text-align:center; line-height:1.5;">
+      direct upload<br/>via signed URL
+    </div>
+
+    <div style="grid-column:3; grid-row:3; font-size:10px; color:#64748b; text-align:center; line-height:1.5;">
+      service-role key<br/>(server only)
+    </div>
+
+    <div style="grid-column:5; grid-row:3; font-size:10px; color:#64748b; text-align:center; line-height:1.5;">
+      read originals<br/>write crops + thumbs
+    </div>
+
+
+    <!-- ROW 4: vertical arrows continued -->
+
+    <div style="grid-column:1; grid-row:4; display:flex; align-items:center; justify-content:center;">
+      <svg viewBox="0 0 32 40" height="40" width="32" xmlns="http://www.w3.org/2000/svg">
+        <line x1="16" y1="0" x2="16" y2="28" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <polygon points="11,28 16,40 21,28" fill="#3b82f6"/>
+      </svg>
+    </div>
+
+    <div style="grid-column:3; grid-row:4; display:flex; align-items:center; justify-content:center;">
+      <svg viewBox="0 0 32 40" height="40" width="32" xmlns="http://www.w3.org/2000/svg">
+        <line x1="16" y1="0" x2="16" y2="28" stroke="#8b5cf6" stroke-width="1.5"/>
+        <polygon points="11,28 16,40 21,28" fill="#8b5cf6"/>
+      </svg>
+    </div>
+
+    <div style="grid-column:5; grid-row:4; display:flex; align-items:center; justify-content:center;">
+      <svg viewBox="0 0 32 40" height="40" width="32" xmlns="http://www.w3.org/2000/svg">
+        <line x1="16" y1="0" x2="16" y2="28" stroke="#22c55e" stroke-width="1.5"/>
+        <polygon points="11,28 16,40 21,28" fill="#22c55e"/>
+      </svg>
+    </div>
+
+
+    <!-- ROW 5: Supabase spanning columns 1–5 -->
+
+    <div style="grid-column:1 / span 6; grid-row:5; width:100%;">
+      <div style="
+        background:#1a2744;
+        border:1.5px solid #3b82f6;
+        border-radius:12px;
+        padding:20px 24px;
+        width:100%;
+      ">
+        <div style="font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; opacity:0.6; margin-bottom:10px;">
+          Data Layer
+        </div>
+        <div style="font-size:15px; font-weight:700; margin-bottom:4px;">Supabase</div>
+        <div style="font-size:11px; opacity:0.5; margin-bottom:16px;">Managed cloud (Supabase.com)</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div style="background:rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px;">
+            <div style="font-size:12px; font-weight:600; color:#93c5fd; margin-bottom:8px;">Postgres Database</div>
+            <div style="font-size:11px; color:#94a3b8; line-height:1.8;">
+              workspaces &nbsp;·&nbsp; projects<br/>
+              images &nbsp;·&nbsp; template_fields<br/>
+              jobs &nbsp;·&nbsp; cells<br/>
+              cell_overrides &nbsp;·&nbsp; workspace_quota
+            </div>
+          </div>
+          <div style="background:rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px;">
+            <div style="font-size:12px; font-weight:600; color:#93c5fd; margin-bottom:8px;">Storage (private bucket: easylab)</div>
+            <div style="font-size:11px; color:#94a3b8; line-height:1.8;">
+              projects/{id}/originals/{image_id}<br/>
+              projects/{id}/thumbs/{image_id}<br/>
+              projects/{id}/crops/{image_id}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end .diagram -->
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-line solid"></div>
+      Direct connection
+    </div>
+    <div class="legend-item">
+      <div class="legend-line dashed"></div>
+      Signed URL (browser uploads directly to storage)
+    </div>
+  </div>
+
+  <!-- Key notes -->
+  <div class="notes">
+    <div class="note"><span>1</span> Next.js never calls Gemini — all AI goes through FastAPI only.</div>
+    <div class="note"><span>2</span> Browser uploads files directly to Supabase Storage via a signed URL that Next.js mints.</div>
+    <div class="note"><span>3</span> FastAPI runs as a persistent VM on Fly.io — not serverless — because PaddleOCR and the in-process job queue live inside it.</div>
+    <div class="note"><span>4</span> The service-role key (full DB access) lives only in server-side code. The browser never sees it.</div>
+  </div>
+
+</body>
+</html>

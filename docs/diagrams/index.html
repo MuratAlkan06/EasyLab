@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EasyLab — Diagrams</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f1117;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      padding: 64px 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 48px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      max-width: 900px;
+      width: 100%;
+    }
+    a.card {
+      display: block;
+      background: #1a2332;
+      border: 1.5px solid #334155;
+      border-radius: 12px;
+      padding: 24px;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.15s ease;
+    }
+    a.card:hover {
+      border-color: #3b82f6;
+      transform: translateY(-2px);
+      background: #1e293b;
+    }
+    .num {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #3b82f6;
+      color: white;
+      font-weight: 700;
+      font-size: 13px;
+      text-align: center;
+      line-height: 28px;
+      margin-bottom: 12px;
+    }
+    a.card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 6px;
+    }
+    a.card p {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <h1>EasyLab — Architecture Diagrams</h1>
+  <div class="subtitle">Visual reference for the MVP system</div>
+
+  <div class="grid">
+    <a class="card" href="infrastructure.html">
+      <div class="num">1</div>
+      <h2>Infrastructure</h2>
+      <p>The services and how they connect: Browser → Next.js → FastAPI → Supabase + Gemini.</p>
+    </a>
+    <a class="card" href="data-flow.html">
+      <div class="num">2</div>
+      <h2>User Journey & Data Flow</h2>
+      <p>What happens at each step from upload through annotation, AI processing, and CSV export.</p>
+    </a>
+    <a class="card" href="ai-pipeline.html">
+      <div class="num">3</div>
+      <h2>AI Pipeline (3 Stages)</h2>
+      <p>Template generation, region detection, value extraction. Gemini Pro + Flash + PaddleOCR.</p>
+    </a>
+    <a class="card" href="database-erd.html">
+      <div class="num">4</div>
+      <h2>Database (ERD)</h2>
+      <p>9 Postgres tables, foreign keys, and how the cell results table ties everything together.</p>
+    </a>
+    <a class="card" href="job-lifecycle.html">
+      <div class="num">5</div>
+      <h2>Job & Image State Machines</h2>
+      <p>How jobs move through queued → running → succeeded, plus image and cell status rules.</p>
+    </a>
+  </div>
+</body>
+</html>

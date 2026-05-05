@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EasyLab — AI Pipeline</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f1117;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      padding: 48px 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 12px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 40px;
+    }
+
+    .pipeline {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      max-width: 880px;
+      width: 100%;
+    }
+
+    .stage {
+      width: 100%;
+      border-radius: 14px;
+      padding: 24px 28px;
+      margin-bottom: 8px;
+    }
+    .stage.input  { background: #1e293b; border: 1.5px solid #475569; }
+    .stage.a      { background: #1a3a52; border: 1.5px solid #0ea5e9; }
+    .stage.b      { background: #2d1b69; border: 1.5px solid #8b5cf6; }
+    .stage.c      { background: #14532d; border: 1.5px solid #22c55e; }
+    .stage.write  { background: #431407; border: 1.5px solid #f97316; }
+
+    .stage-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .stage-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+    .stage-tag {
+      font-size: 10px;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .tag-a { background: #0ea5e9; color: #0c4a6e; }
+    .tag-b { background: #8b5cf6; color: #2e1065; }
+    .tag-c { background: #22c55e; color: #14532d; }
+    .tag-w { background: #f97316; color: #431407; }
+    .tag-i { background: #475569; color: #e2e8f0; }
+
+    .stage-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .col {
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+    .col-label {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      opacity: 0.55;
+      margin-bottom: 6px;
+    }
+    .col-content {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+    .col-content code {
+      background: rgba(0,0,0,0.3);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 11px;
+      color: #fbbf24;
+    }
+
+    .arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 6px 0;
+    }
+    .arrow svg {
+      width: 28px;
+      height: 32px;
+    }
+    .arrow .label {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    .branch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid #ef4444;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 11px;
+      color: #fca5a5;
+      margin: 4px 0;
+      align-self: center;
+    }
+
+    .legend {
+      margin-top: 36px;
+      max-width: 880px;
+      width: 100%;
+      background: #1a2332;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .legend h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .legend-row {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 8px;
+      font-size: 12px;
+      color: #94a3b8;
+      padding: 4px 0;
+    }
+    .legend-row strong { color: #f8fafc; }
+  </style>
+</head>
+<body>
+  <h1>EasyLab — AI Extraction Pipeline</h1>
+  <div class="subtitle">3 stages running on FastAPI · Gemini 2.5 Pro + Flash + PaddleOCR</div>
+
+  <div class="pipeline">
+
+    <div class="stage input">
+      <div class="stage-header">
+        <div class="stage-title">Input</div>
+        <div class="stage-tag tag-i">Once per project</div>
+      </div>
+      <div class="col-content">Reference image + user-drawn boxes (normalized 0..1) + field names</div>
+    </div>
+
+    <div class="arrow">
+      <svg viewBox="0 0 28 32"><line x1="14" y1="0" x2="14" y2="22" stroke="#64748b" stroke-width="1.5"/><polygon points="9,22 14,32 19,22" fill="#64748b"/></svg>
+    </div>
+
+    <div class="stage a">
+      <div class="stage-header">
+        <div class="stage-title">Stage A — Template Generation</div>
+        <div class="stage-tag tag-a">Gemini 2.5 Pro · once</div>
+      </div>
+      <div class="stage-grid">
+        <div class="col">
+          <div class="col-label">Input</div>
+          <div class="col-content">Reference image (resized to 1568px) + field list with <code>reference_box</code></div>
+        </div>
+        <div class="col">
+          <div class="col-label">Output</div>
+          <div class="col-content"><code>semantic_description</code> + <code>expected_format</code> per field, stored in <code>template_fields</code></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">
+      <svg viewBox="0 0 28 32"><line x1="14" y1="0" x2="14" y2="22" stroke="#64748b" stroke-width="1.5"/><polygon points="9,22 14,32 19,22" fill="#64748b"/></svg>
+      <div class="label">for each non-reference image (5 in parallel)</div>
+    </div>
+
+    <div class="stage b">
+      <div class="stage-header">
+        <div class="stage-title">Stage B — Region Detection</div>
+        <div class="stage-tag tag-b">Gemini 2.5 Pro · per image</div>
+      </div>
+      <div class="stage-grid">
+        <div class="col">
+          <div class="col-label">Input</div>
+          <div class="col-content">Image (1568px) + all fields with <code>semantic_description</code></div>
+        </div>
+        <div class="col">
+          <div class="col-label">Output</div>
+          <div class="col-content"><code>detected_box</code> [ymin,xmin,ymax,xmax] in 0..1000 → normalized 0..1<br/>+ <code>box_confidence</code> per field</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="branch">↳ found = false → write failed cell, skip Stage C</div>
+
+    <div class="arrow">
+      <svg viewBox="0 0 28 32"><line x1="14" y1="0" x2="14" y2="22" stroke="#64748b" stroke-width="1.5"/><polygon points="9,22 14,32 19,22" fill="#64748b"/></svg>
+      <div class="label">for each detected field on each image</div>
+    </div>
+
+    <div class="stage c">
+      <div class="stage-header">
+        <div class="stage-title">Stage C — Value Extraction (parallel readers)</div>
+        <div class="stage-tag tag-c">Flash + PaddleOCR · per field</div>
+      </div>
+      <div class="stage-grid">
+        <div class="col">
+          <div class="col-label">Input</div>
+          <div class="col-content">Crop from <em>original-resolution</em> image (+8% padding), resized to 768px</div>
+        </div>
+        <div class="col">
+          <div class="col-label">Output</div>
+          <div class="col-content"><code>raw_text</code> · <code>parsed_value</code> · <code>unit_seen</code> · <code>legible</code> · <code>self_confidence</code><br/>OCR runs in parallel for reconciliation</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">
+      <svg viewBox="0 0 28 32"><line x1="14" y1="0" x2="14" y2="22" stroke="#64748b" stroke-width="1.5"/><polygon points="9,22 14,32 19,22" fill="#64748b"/></svg>
+      <div class="label">reconcile Flash + PaddleOCR</div>
+    </div>
+
+    <div class="stage write">
+      <div class="stage-header">
+        <div class="stage-title">Write Cell Row</div>
+        <div class="stage-tag tag-w">Postgres · per cell</div>
+      </div>
+      <div class="col-content" style="font-size:12px; line-height:1.7;">
+        <code>combined_confidence = round(0.4 × box + 0.6 × value, 3)</code><br/>
+        Status: <strong>ok</strong> (≥0.85) · <strong>low_confidence</strong> (0.60–0.85) · <strong>needs_review</strong> (&lt;0.60 or illegible) · <strong>failed</strong>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <h3>Key Rules</h3>
+    <div class="legend-row"><strong>JSON schema</strong><span>Every Gemini call uses native <code>response_json_schema</code> from Pydantic <code>.model_json_schema()</code>. Validated before downstream use.</span></div>
+    <div class="legend-row"><strong>EXIF transpose</strong><span>Applied to every image before any stage.</span></div>
+    <div class="legend-row"><strong>Coordinates</strong><span>Always normalized 0..1 against original dimensions. Never display pixels.</span></div>
+    <div class="legend-row"><strong>Concurrency</strong><span>2 jobs · 5 images per job · 10 max concurrent Gemini calls.</span></div>
+    <div class="legend-row"><strong>Circuit breaker</strong><span>5 consecutive 5xx → pause job for 60s. 429 → honor <code>retry-after</code> header.</span></div>
+    <div class="legend-row"><strong>Cost</strong><span>~$0.40 per 50 images × 4 fields. ~50s end-to-end.</span></div>
+  </div>
+</body>
+</html>

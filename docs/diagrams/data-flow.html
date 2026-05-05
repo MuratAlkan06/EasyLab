@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EasyLab — User Journey & Data Flow</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f1117;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      padding: 48px 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 12px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 48px;
+    }
+
+    .flow {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      width: 100%;
+      max-width: 920px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 60px 1fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .step-num {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .step-num .circle {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 16px;
+      color: #f8fafc;
+      flex-shrink: 0;
+    }
+    .step-num .line {
+      width: 2px;
+      flex: 1;
+      background: #334155;
+      margin-top: 4px;
+      margin-bottom: 4px;
+    }
+
+    .step-card {
+      background: #1a2332;
+      border: 1.5px solid #334155;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .step-card.user   { border-color: #3b82f6; }
+    .step-card.next   { border-color: #8b5cf6; }
+    .step-card.ai     { border-color: #22c55e; }
+    .step-card.review { border-color: #f97316; }
+
+    .step-card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: #f8fafc;
+    }
+    .step-card .who {
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: 12px;
+    }
+    .step-card .desc {
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+    .step-card .systems {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .pill {
+      font-size: 10px;
+      padding: 3px 9px;
+      border-radius: 99px;
+      font-weight: 500;
+    }
+    .pill-blue   { background: #1e3a5f; color: #93c5fd; }
+    .pill-purple { background: #2d1b69; color: #c4b5fd; }
+    .pill-green  { background: #14532d; color: #86efac; }
+    .pill-orange { background: #431407; color: #fdba74; }
+
+    .circle.user   { background: #3b82f6; }
+    .circle.next   { background: #8b5cf6; }
+    .circle.ai     { background: #22c55e; }
+    .circle.review { background: #f97316; }
+
+    .legend {
+      margin-top: 32px;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+  <h1>EasyLab — User Journey & Data Flow</h1>
+  <div class="subtitle">From first upload to final CSV export</div>
+
+  <div class="flow">
+
+    <div class="step">
+      <div class="step-num"><div class="circle user">1</div><div class="line"></div></div>
+      <div class="step-card user">
+        <h2>Create project & upload images</h2>
+        <div class="who">User · Browser</div>
+        <div class="desc">User opens app → workspace cookie auto-created → creates a named project → drops 10–50 lab images. Each image is uploaded directly to Supabase Storage via a signed URL minted by Next.js.</div>
+        <div class="systems">
+          <span class="pill pill-blue">Browser</span>
+          <span class="pill pill-purple">Next.js mints URL</span>
+          <span class="pill pill-orange">Storage receives file</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"><div class="circle user">2</div><div class="line"></div></div>
+      <div class="step-card user">
+        <h2>Pick reference image</h2>
+        <div class="who">User · Browser</div>
+        <div class="desc">User selects one image from the uploaded grid as the reference. This is the image they'll annotate. PATCH updates <code>projects.reference_image_id</code>.</div>
+        <div class="systems">
+          <span class="pill pill-blue">Browser</span>
+          <span class="pill pill-purple">Next.js</span>
+          <span class="pill pill-orange">Postgres</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"><div class="circle user">3</div><div class="line"></div></div>
+      <div class="step-card user">
+        <h2>Annotate fields on reference</h2>
+        <div class="who">User · Browser (react-konva)</div>
+        <div class="desc">User draws rectangles on the reference image and names each field (e.g. "Voltage", "Current"). Optionally sets expected format. Boxes are stored normalized 0..1 — never in display pixels.</div>
+        <div class="systems">
+          <span class="pill pill-blue">react-konva canvas</span>
+          <span class="pill pill-purple">POST /api/projects/:id/fields</span>
+          <span class="pill pill-orange">template_fields rows</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"><div class="circle next">4</div><div class="line"></div></div>
+      <div class="step-card next">
+        <h2>Enqueue extraction job</h2>
+        <div class="who">Next.js · Server</div>
+        <div class="desc">User clicks "Start Processing". Next.js checks <code>workspace_quota</code> (returns 429 if exceeded), then inserts a row into <code>jobs</code> with status=queued. UI redirects to the processing page and starts polling.</div>
+        <div class="systems">
+          <span class="pill pill-purple">POST /api/projects/:id/jobs</span>
+          <span class="pill pill-orange">jobs row inserted</span>
+          <span class="pill pill-orange">workspace_quota++</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"><div class="circle ai">5</div><div class="line"></div></div>
+      <div class="step-card ai">
+        <h2>Worker picks up job</h2>
+        <div class="who">FastAPI · Fly.io</div>
+        <div class="desc">FastAPI polls <code>jobs</code> with <code>FOR UPDATE SKIP LOCKED</code>, claims the queued job, sets status=running. Heartbeat every 5s.</div>
+        <div class="systems">
+          <span class="pill pill-green">asyncio worker</span>
+          <span class="pill pill-orange">jobs.status → running</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"><div class="circle ai">6</div><div class="line"></div></div>
+      <div class="step-card ai">
+        <h2>AI pipeline runs</h2>
+        <div class="who">FastAPI + Gemini + PaddleOCR</div>
+        <div class="desc">Stage A: Gemini 2.5 Pro enriches the template (semantic descriptions). Stage B: detects regions in each non-reference image. Stage C: Gemini Flash + PaddleOCR read values from each crop. Each cell row is written with confidence + status.</div>
+        <div class="systems">
+          <span class="pill pill-green">Stage A · Pro</span>
+          <span class="pill pill-green">Stage B · Pro</span>
+          <span class="pill pill-green">Stage C · Flash + OCR</span>
+          <span class="pill pill-orange">cells, crops written</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"><div class="circle review">7</div><div class="line"></div></div>
+      <div class="step-card review">
+        <h2>Review table</h2>
+        <div class="who">User · Browser</div>
+        <div class="desc">When job succeeds, UI loads cells as a table: rows = images, columns = fields. Each cell shows the value, confidence color, and the crop image. User double-clicks low-confidence cells to fix them.</div>
+        <div class="systems">
+          <span class="pill pill-blue">TanStack Table + Virtual</span>
+          <span class="pill pill-purple">GET cells + crops</span>
+          <span class="pill pill-orange">cell_overrides on edit</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"><div class="circle review">8</div></div>
+      <div class="step-card review">
+        <h2>Export CSV</h2>
+        <div class="who">User · Browser → Next.js</div>
+        <div class="desc">User clicks "Export CSV". Next.js merges <code>cells.parsed_value</code> with any <code>cell_overrides.corrected_value</code> (overrides win) and streams a CSV download. Re-running the job preserves user corrections.</div>
+        <div class="systems">
+          <span class="pill pill-purple">GET /api/projects/:id/export.csv</span>
+          <span class="pill pill-orange">cells + cell_overrides</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="dot" style="background:#3b82f6"></div>User action</div>
+    <div class="legend-item"><div class="dot" style="background:#8b5cf6"></div>Next.js / Vercel</div>
+    <div class="legend-item"><div class="dot" style="background:#22c55e"></div>FastAPI worker / AI</div>
+    <div class="legend-item"><div class="dot" style="background:#f97316"></div>Review & export</div>
+  </div>
+</body>
+</html>
