@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import threading
 
 import structlog
 from PIL import Image
@@ -40,6 +41,22 @@ OCR_FAIL_CONFIDENCE = 0.0
 _SMALL_CROP_HEIGHT_PX = 48
 _SMALL_CROP_ZOOM = 3
 
+# Cached singleton — PaddleOCR uses global state (PDX) and throws on reinit.
+# Lock guards against concurrent thread-pool calls racing to init the first instance.
+_ocr_instance: object | None = None
+_ocr_lock = threading.Lock()
+
+
+def _get_ocr() -> object:
+    global _ocr_instance
+    if _ocr_instance is None:
+        with _ocr_lock:
+            if _ocr_instance is None:
+                import numpy as np  # noqa: F401 — ensure numpy is imported before paddle
+                from paddleocr import PaddleOCR
+                _ocr_instance = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+    return _ocr_instance
+
 
 def run_ocr(crop_bytes: bytes) -> str | None:
     """Run PaddleOCR on a JPEG crop. Returns the top-1 text string or ``None`` on failure.
@@ -49,9 +66,7 @@ def run_ocr(crop_bytes: bytes) -> str | None:
     is responsible for treating ``None`` as a failed read in the reconciliation.
     """
     try:
-        # Lazy import: paying the ~500MB paddle import cost only when invoked.
         import numpy as np
-        from paddleocr import PaddleOCR
 
         img = Image.open(io.BytesIO(crop_bytes))
         img.load()
@@ -66,8 +81,7 @@ def run_ocr(crop_bytes: bytes) -> str | None:
             )
 
         np_array = np.array(img)
-
-        ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+        ocr = _get_ocr()
         result = ocr.ocr(np_array, cls=True)
 
         if not result or not result[0]:

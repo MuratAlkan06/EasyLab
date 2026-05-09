@@ -49,6 +49,10 @@ log = structlog.get_logger()
 _RETRY_WAIT_SECONDS = 2.0
 _MAX_ATTEMPTS = 2
 
+# Detections below this box_confidence are treated as too uncertain to crop.
+# The reference-box fallback is tried first; failing that, a failed cell is written.
+_MIN_BOX_CONFIDENCE = 0.30
+
 # Heartbeat the parent job at most this often during Stage B. The lock-keeper
 # in the worker poll loop watches `heartbeat_at` to detect stuck jobs.
 _HEARTBEAT_INTERVAL_SECONDS = 5.0
@@ -93,21 +97,27 @@ async def _call_with_retry(
 async def _load_template_fields(pool: asyncpg.Pool, project_id) -> list[dict]:
     rows = await pool.fetch(
         """
-        SELECT id, field_name, semantic_description
+        SELECT id, field_name, semantic_description, reference_box
         FROM template_fields
         WHERE project_id = $1
         ORDER BY display_order
         """,
         project_id,
     )
-    return [
-        {
-            "id": r["id"],
-            "field_name": r["field_name"],
-            "semantic_description": r["semantic_description"],
-        }
-        for r in rows
-    ]
+    fields = []
+    for r in rows:
+        box = r["reference_box"]
+        if isinstance(box, str):
+            box = json.loads(box)
+        fields.append(
+            {
+                "id": r["id"],
+                "field_name": r["field_name"],
+                "semantic_description": r["semantic_description"],
+                "reference_box": box,
+            }
+        )
+    return fields
 
 
 async def _load_image_tasks(pool: asyncpg.Pool, job_id) -> list[dict]:
@@ -273,7 +283,12 @@ async def _process_image(
             height_px,
         )
 
-    # Call Gemini with retry. On total failure mark every field not_found.
+    # Declare before the try so the except block can populate it directly.
+    image_detected: dict[UUID, dict[str, Any]] = {}
+
+    # Call Gemini with retry. On total failure, try reference-box fallback per
+    # field; write a failed cell only when no reference box is available either.
+    parsed = None
     try:
         parsed = await _call_with_retry(
             client,
@@ -283,6 +298,7 @@ async def _process_image(
                 {
                     "field_name": f["field_name"],
                     "semantic_description": f["semantic_description"],
+                    "reference_box": f.get("reference_box"),
                 }
                 for f in fields
             ],
@@ -295,76 +311,105 @@ async def _process_image(
             error=str(exc),
         )
         for field in fields:
-            await _write_failed_cell(
-                pool,
-                job_id=job_id,
-                project_id=project_id,
-                image_id=image_id,
-                field_id=field["id"],
-                failure_reason="field_not_visible",
+            ref_box = field.get("reference_box")
+            if ref_box and is_box_valid(ref_box, width_px, height_px):
+                log.info(
+                    "stage_b.reference_fallback",
+                    job_id=str(job_id),
+                    image_id=str(image_id),
+                    field_name=field["field_name"],
+                    reason="gemini_error",
+                )
+                image_detected[field["id"]] = {
+                    "box": ref_box,
+                    "box_confidence": 0.05,
+                    "image_width": width_px,
+                    "image_height": height_px,
+                }
+            else:
+                await _write_failed_cell(
+                    pool,
+                    job_id=job_id,
+                    project_id=project_id,
+                    image_id=image_id,
+                    field_id=field["id"],
+                    failure_reason="field_not_visible",
+                )
+        if not image_detected:
+            await pool.execute(
+                """
+                UPDATE image_tasks
+                SET status = 'not_found', error = $2, updated_at = now()
+                WHERE id = $1
+                """,
+                task["task_id"],
+                str(exc)[:500],
             )
-        await pool.execute(
-            """
-            UPDATE image_tasks
-            SET status = 'not_found', error = $2, updated_at = now()
-            WHERE id = $1
-            """,
-            task["task_id"],
-            str(exc)[:500],
-        )
-        return
+            return
+        # parsed stays None — skip the per-field Gemini loop below.
 
-    by_name = {df.field_name: df for df in parsed.fields}
-    image_detected: dict[UUID, dict[str, Any]] = {}
+    # If Gemini succeeded, process each field: apply confidence threshold and
+    # fall back to the reference box when the detection is absent or unreliable.
+    if parsed is not None:
+        by_name = {df.field_name: df for df in parsed.fields}
 
-    for field in fields:
-        df = by_name.get(field["field_name"])
+        for field in fields:
+            df = by_name.get(field["field_name"])
+            ref_box = field.get("reference_box")
 
-        # R1: missing field name in response → failed cell.
-        if df is None:
-            await _write_failed_cell(
-                pool,
-                job_id=job_id,
-                project_id=project_id,
-                image_id=image_id,
-                field_id=field["id"],
-                failure_reason="field_not_visible",
-            )
-            continue
+            accepted_box: dict | None = None
+            accepted_conf: float = 0.0
+            failure_reason: str = "field_not_visible"
+            failure_conf: float = 0.0
 
-        # found=False or no box → failed cell.
-        if not df.found or df.box is None:
-            await _write_failed_cell(
-                pool,
-                job_id=job_id,
-                project_id=project_id,
-                image_id=image_id,
-                field_id=field["id"],
-                failure_reason="field_not_visible",
-                box_confidence=float(df.box_confidence or 0.0),
-            )
-            continue
+            if df is None:
+                # R1: field name missing from response entirely.
+                pass
+            elif not df.found or df.box is None:
+                # R2: Gemini explicitly did not find the field.
+                failure_conf = float(df.box_confidence or 0.0)
+            elif (df.box_confidence or 0.0) < _MIN_BOX_CONFIDENCE:
+                # R3: detected but below confidence threshold — crop would be unreliable.
+                failure_reason = "low_confidence"
+                failure_conf = float(df.box_confidence or 0.0)
+            else:
+                box = convert_box_to_normalized(df.box)
+                if not is_box_valid(box, width_px, height_px):
+                    # R4: box geometry rejected (too small, degenerate, full-image).
+                    failure_conf = float(df.box_confidence or 0.0)
+                else:
+                    accepted_box = box
+                    accepted_conf = float(df.box_confidence or 0.0)
 
-        # Convert + validate. Invalid box treated as not-found.
-        box = convert_box_to_normalized(df.box)
-        if not is_box_valid(box, width_px, height_px):
-            await _write_failed_cell(
-                pool,
-                job_id=job_id,
-                project_id=project_id,
-                image_id=image_id,
-                field_id=field["id"],
-                failure_reason="field_not_visible",
-                box_confidence=float(df.box_confidence or 0.0),
-            )
-            continue
+            # Fallback: use the annotated reference box when Gemini detection failed.
+            if accepted_box is None and ref_box and is_box_valid(ref_box, width_px, height_px):
+                log.info(
+                    "stage_b.reference_fallback",
+                    job_id=str(job_id),
+                    image_id=str(image_id),
+                    field_name=field["field_name"],
+                    reason=failure_reason,
+                )
+                accepted_box = ref_box
+                accepted_conf = 0.05  # low confidence → cell gets needs_review
 
-        image_detected[field["id"]] = {
-            "box": box,
-            "box_confidence": float(df.box_confidence or 0.0),
-            "image_width": width_px,
-            "image_height": height_px,
-        }
+            if accepted_box is not None:
+                image_detected[field["id"]] = {
+                    "box": accepted_box,
+                    "box_confidence": accepted_conf,
+                    "image_width": width_px,
+                    "image_height": height_px,
+                }
+            else:
+                await _write_failed_cell(
+                    pool,
+                    job_id=job_id,
+                    project_id=project_id,
+                    image_id=image_id,
+                    field_id=field["id"],
+                    failure_reason=failure_reason,
+                    box_confidence=failure_conf,
+                )
 
     if image_detected:
         detected[image_id] = image_detected

@@ -172,12 +172,6 @@ def _validate_extraction(
         ):
             return "expected number, got string"
 
-    expected_unit = expected_format.get("unit")
-    if expected_unit:
-        seen = (extraction.unit_seen or "").strip().lower()
-        want = expected_unit.strip().lower()
-        if seen != want:
-            return f"unit mismatch: expected {expected_unit}, got {extraction.unit_seen or ''}"
     return None
 
 

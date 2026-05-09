@@ -45,16 +45,21 @@ def _build_stage_a_prompt(fields: list[dict]) -> str:
     field_block = "\n".join(lines)
 
     return (
-        "You are analyzing a reference lab image. I have annotated the following "
-        "fields in this image, each identified by a bounding box (x, y, width, "
-        "height as fractions of image size, top-left origin):\n\n"
+        "You are analyzing a reference lab instrument image. I have annotated the "
+        "following fields, each identified by a bounding box (x, y, width, height "
+        "as fractions of image size, top-left origin):\n\n"
         f"{field_block}\n\n"
-        "For each field, produce:\n"
-        "- semantic_description: a precise description of WHAT the field shows "
-        'visually (e.g. "7-segment LCD display showing voltage reading in '
-        'top-left of the instrument panel")\n'
-        '- expected_format: your best guess at {"type": "number"|"text"|"boolean", '
-        '"unit": "V"|null} — null if unsure\n\n'
+        "For each field produce:\n"
+        "- semantic_description: describe the ACTIVE DISPLAY ELEMENT inside the "
+        "box — the part that shows a live, changing reading (e.g. a 7-segment LCD, "
+        "a needle gauge, a digital counter). Be specific about its visual appearance "
+        "(display type, colour, position relative to surrounding hardware) so that "
+        "the same element can be found reliably in other images of the same "
+        "instrument.\n"
+        "  IMPORTANT: do NOT describe static labels, printed text on the device "
+        "body, socket markings, or anything that does not change between images.\n"
+        '- expected_format: {"type": "number"|"text"|"boolean", "unit": "V"|null} '
+        "— null if unsure\n\n"
         "Return ONLY the fields listed above, in the same order."
     )
 
@@ -90,19 +95,51 @@ def _build_stage_b_prompt(fields: list[dict]) -> str:
     lines = []
     for f in fields:
         description = f.get("semantic_description") or f["field_name"]
-        lines.append(f"- {f['field_name']}: {description}")
+        ref_box = f.get("reference_box")
+        if ref_box:
+            x_lo = round(ref_box["x"] * 100)
+            x_hi = round((ref_box["x"] + ref_box["width"]) * 100)
+            y_lo = round(ref_box["y"] * 100)
+            y_hi = round((ref_box["y"] + ref_box["height"]) * 100)
+            spatial = f" [ref position: x {x_lo}%–{x_hi}%, y {y_lo}%–{y_hi}% of image]"
+        else:
+            spatial = ""
+        lines.append(f"- {f['field_name']}: {description}{spatial}")
     field_block = "\n".join(lines)
 
     return (
-        "You are analyzing a lab image. Locate each of the following fields in "
-        "the image. Each field is described by what it shows visually:\n\n"
+        "You are analyzing a lab instrument image. Locate each active display "
+        "element described below. Each description refers specifically to a live "
+        "readout (LCD segment, digital display, gauge needle, etc.) — NOT to any "
+        "static label, printed text, or socket marking on the device body.\n\n"
         f"{field_block}\n\n"
-        "For every field, return:\n"
+        "The [ref position] hint shows approximately where this display appeared "
+        "in a reference image of the same instrument. The current image may have "
+        "slight position/zoom differences, but the display should be near that region.\n\n"
+        "Rules:\n"
+        "- Your box must tightly enclose ONLY the active display/readout element "
+        "itself — the region that shows a changing numeric or text value.\n"
+        "- Do NOT box static text printed on the device (e.g. 'AMP', 'VOLT', "
+        "terminal labels, range markings, socket labels).\n"
+        "- Use the [ref position] hint to anchor your search — if the hint points "
+        "to a region and you see an active display there, that is almost certainly "
+        "the correct element even if your confidence would otherwise be low.\n"
+        "- If you are genuinely uncertain whether a region is a live display or a "
+        "static label, return it with a low box_confidence (≤0.3) rather than "
+        "defaulting to found=false — a low-confidence detection is more useful than "
+        "no detection.\n"
+        "- Only set found=false when the display element is clearly absent from the "
+        "image entirely (e.g. cropped out, covered, or this instrument does not "
+        "have that field at all).\n"
+        "- If the display is present but partially obscured or at an angle, still "
+        "return it with an appropriate box_confidence.\n\n"
+        "For every field return:\n"
         "- field_name: exactly as listed above\n"
-        "- found: true if the field is visible, false otherwise\n"
+        "- found: true only if you can locate the active display element\n"
         "- box: [ymin, xmin, ymax, xmax] in 0..1000 coordinate space (Gemini "
-        "native). Set to null when found is false.\n"
-        "- box_confidence: 0.0..1.0 detection confidence (0.0 when not found)\n\n"
+        "native). null when found is false.\n"
+        "- box_confidence: 0.0..1.0 — your confidence that the box encloses the "
+        "correct live readout (0.0 when not found)\n\n"
         "Return one entry per field listed above, in the same order."
     )
 
@@ -158,17 +195,23 @@ def _build_stage_c_prompt(field: dict) -> str:
         hint_block = f"\nHints for this field:\n{hint_block}\n"
 
     return (
-        "You are reading a single field cropped out of a lab instrument image. "
+        "You are reading a single field cropped from a lab instrument image. "
         f"The field is labelled '{field_name}'.{hint_block}\n"
+        "The crop should show a live display readout (LCD digits, gauge needle, "
+        "digital counter, etc.).\n\n"
         "Return:\n"
-        "- raw_text: exactly what appears in the crop, character-for-character.\n"
-        "- parsed_value: the typed value (number/integer/string/boolean) or null "
-        "if you cannot read it.\n"
-        "- unit_seen: the unit string as it appears in the crop, or null if no "
-        "unit is shown.\n"
-        "- legible: false if the reading is too blurry/obscured/missing to be "
-        "trusted; true otherwise.\n"
-        "- self_confidence: your confidence in the reading, 0.0..1.0.\n"
+        "- raw_text: exactly what appears in the crop, character-for-character. "
+        "If the crop shows only static printed labels or device markings rather "
+        "than a live reading, write what you see literally.\n"
+        "- parsed_value: the typed value (number/string/boolean) or null if you "
+        "cannot read a live value.\n"
+        "- unit_seen: the unit string as it appears in the crop, or null if none.\n"
+        "- legible: true if the crop shows a readable live display value. Set "
+        "false if the crop is blurry, obscured, or appears to show only static "
+        "device labels/markings rather than an active readout.\n"
+        "- self_confidence: your confidence that the crop contains a correct live "
+        "reading, 0.0..1.0. Use a low value (≤0.3) if the crop looks like a "
+        "label or terminal marking rather than a live display.\n"
     )
 
 
@@ -186,8 +229,8 @@ async def call_stage_c(
     """
     config = types.GenerateContentConfig(
         temperature=0.0,
-        # NO thinking_config — cost control; spatial reasoning unnecessary here.
-        max_output_tokens=256,
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
+        max_output_tokens=1024,
         response_mime_type="application/json",
         response_json_schema=ExtractionResponse.model_json_schema(),
     )
@@ -200,4 +243,7 @@ async def call_stage_c(
         ],
         config=config,
     )
-    return ExtractionResponse.model_validate_json(response.text)
+    text = response.text
+    if not text:
+        raise ValueError("Gemini returned empty response for Stage C extraction")
+    return ExtractionResponse.model_validate_json(text)
