@@ -53,6 +53,11 @@ _MAX_ATTEMPTS = 2
 # The reference-box fallback is tried first; failing that, a failed cell is written.
 _MIN_BOX_CONFIDENCE = 0.30
 
+# Confidence assigned to reference-box fallback crops. User-drawn boxes on the
+# same instrument setup are reliable; 0.55 lets a good Stage C extraction
+# (self_confidence ≥ 0.80) reach low_confidence status rather than needs_review.
+_REFERENCE_BOX_CONFIDENCE = 0.55
+
 # Heartbeat the parent job at most this often during Stage B. The lock-keeper
 # in the worker poll loop watches `heartbeat_at` to detect stuck jobs.
 _HEARTBEAT_INTERVAL_SECONDS = 5.0
@@ -322,7 +327,7 @@ async def _process_image(
                 )
                 image_detected[field["id"]] = {
                     "box": ref_box,
-                    "box_confidence": 0.05,
+                    "box_confidence": _REFERENCE_BOX_CONFIDENCE,
                     "image_width": width_px,
                     "image_height": height_px,
                 }
@@ -391,7 +396,7 @@ async def _process_image(
                     reason=failure_reason,
                 )
                 accepted_box = ref_box
-                accepted_conf = 0.05  # low confidence → cell gets needs_review
+                accepted_conf = _REFERENCE_BOX_CONFIDENCE
 
             if accepted_box is not None:
                 image_detected[field["id"]] = {

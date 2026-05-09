@@ -157,7 +157,7 @@ async def call_stage_b(
     config = types.GenerateContentConfig(
         temperature=1.0,
         thinking_config=types.ThinkingConfig(thinking_budget=-1),
-        max_output_tokens=1024,
+        max_output_tokens=8192,
         response_mime_type="application/json",
         response_json_schema=DetectionResponse.model_json_schema(),
     )
@@ -170,7 +170,10 @@ async def call_stage_b(
         ],
         config=config,
     )
-    return DetectionResponse.model_validate_json(response.text)
+    text = response.text
+    if not text:
+        raise ValueError("Gemini returned empty response for Stage B detection")
+    return DetectionResponse.model_validate_json(text)
 
 
 def _build_stage_c_prompt(field: dict) -> str:
