@@ -16,6 +16,9 @@ dependencies = [
     "structlog>=24.4",
     "alembic>=1.14",
     "sqlalchemy[asyncio]>=2.0",
+    # OCR_ENABLED=false can be set to skip loading these at runtime
+    "paddleocr>=2.8",
+    "paddlepaddle>=3.0",
 ]
 
 [project.optional-dependencies]

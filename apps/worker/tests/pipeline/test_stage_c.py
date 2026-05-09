@@ -106,8 +106,13 @@ async def _run_process_image(
     extraction_raises: Exception | None = None,
     upload_raises: Exception | None = None,
     detection_overrides: dict | None = None,
+    ocr_text: str | None = None,
 ) -> tuple[AsyncMock, dict]:
-    """Drive ``stage_c._process_image`` with a single field/detection."""
+    """Drive ``stage_c._process_image`` with a single field/detection.
+
+    ``ocr_text`` is the value the (mocked) PaddleOCR reader returns. Default
+    ``None`` exercises the OCR-failed/empty reconciliation path (row 3).
+    """
     pool = _stub_pool()
     job = _make_job()
     image_id = uuid4()
@@ -143,6 +148,7 @@ async def _run_process_image(
         patch.object(stage_c, "crop_and_encode", return_value=b"crop-bytes"),
         patch.object(stage_c, "_upload_crop_bytes", new=upload_mock),
         patch.object(stage_c, "_call_with_retry", new=call_with_retry),
+        patch.object(stage_c, "run_ocr", return_value=ocr_text),
     ):
         await stage_c._process_image(
             pool,
@@ -338,3 +344,84 @@ async def test_combined_confidence_written_correctly() -> None:
     assert row["combined_confidence"] == pytest.approx(0.74, abs=1e-6)
     assert row["box_confidence"] == pytest.approx(0.8)
     assert row["value_confidence"] == pytest.approx(0.7)
+
+
+# ---------------------------------------------------------------------------
+# PaddleOCR reconciliation (Slice 3.4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ocr_agrees_with_flash_uses_max_confidence() -> None:
+    """Both readers agree → value_confidence = max(flash_conf, ocr_conf=0.85)."""
+    field = _make_field("Voltage", expected_format={"type": "number"})
+    extraction = ExtractionResponse(
+        raw_text="12.34",
+        parsed_value=12.34,
+        unit_seen=None,
+        legible=True,
+        self_confidence=0.7,  # < ocr_conf so we can see max() pick OCR's 0.85.
+    )
+
+    pool, _ = await _run_process_image(
+        field=field,
+        extraction=extraction,
+        ocr_text="12.34",
+    )
+
+    row = _cell_kwargs(_cell_insert_calls(pool)[0])
+    assert row["value_confidence"] == pytest.approx(0.85)
+    # Flash value preserved when readings agree.
+    assert json.loads(row["parsed_value"]) == 12.34
+    assert row["legible"] is True
+
+
+@pytest.mark.asyncio
+async def test_ocr_disagrees_sets_legible_false() -> None:
+    """Readers disagree → legible=False, value_confidence = min(flash, ocr) − 0.2."""
+    field = _make_field("Voltage", expected_format={"type": "number"})
+    extraction = ExtractionResponse(
+        raw_text="12.34",
+        parsed_value=12.34,
+        unit_seen=None,
+        legible=True,
+        self_confidence=0.9,  # min(0.9, 0.85) = 0.85, − 0.2 = 0.65.
+    )
+
+    pool, _ = await _run_process_image(
+        field=field,
+        extraction=extraction,
+        ocr_text="56.78",
+    )
+
+    row = _cell_kwargs(_cell_insert_calls(pool)[0])
+    assert row["legible"] is False
+    assert row["value_confidence"] == pytest.approx(0.65, abs=1e-6)
+    # legible=False forces needs_review regardless of combined_confidence.
+    assert row["status"] == "needs_review"
+
+
+@pytest.mark.asyncio
+async def test_flash_not_legible_but_ocr_succeeds_uses_ocr() -> None:
+    """Flash legible=False + OCR text → legible flipped to True, OCR value used."""
+    field = _make_field("Voltage", expected_format={"type": "number"})
+    extraction = ExtractionResponse(
+        raw_text="??",
+        parsed_value=None,
+        unit_seen=None,
+        legible=False,
+        self_confidence=0.2,
+    )
+
+    pool, _ = await _run_process_image(
+        field=field,
+        extraction=extraction,
+        ocr_text="42",
+    )
+
+    row = _cell_kwargs(_cell_insert_calls(pool)[0])
+    assert row["legible"] is True
+    assert row["raw_text"] == "42"
+    # OCR's "42" was parsed as a number per expected_format.
+    assert json.loads(row["parsed_value"]) == 42.0
+    assert row["value_confidence"] == pytest.approx(0.85)

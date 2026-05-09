@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     image_concurrency: int = 5
     confidence_threshold: float = 0.7
 
+    # PaddleOCR runs alongside Gemini Flash in Stage C. Set to false to skip
+    # loading the paddle stack at runtime (e.g. CI, local dev without OCR).
+    ocr_enabled: bool = True
+
     log_level: str = "INFO"
 
     class Config:

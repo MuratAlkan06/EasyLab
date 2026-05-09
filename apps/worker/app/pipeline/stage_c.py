@@ -13,9 +13,10 @@ Outputs:
   * `image_tasks.status` advanced to ``done`` when all fields succeed,
     ``failed`` if every field's extraction failed.
 
-PaddleOCR is intentionally stubbed in this slice (3.3) — it lands in 3.4.
-The reconciliation path here is therefore Flash-only:
-``value_confidence = extraction.self_confidence``.
+PaddleOCR runs in parallel with Gemini Flash on the same crop and the two
+readings are reconciled per docs/ai-pipeline.md §7. When ``OCR_ENABLED=false``
+the reconciliation falls through to the Flash-only path
+(``value_confidence = extraction.self_confidence``).
 """
 
 from __future__ import annotations
@@ -41,6 +42,13 @@ from tenacity import (
 from app.pipeline.confidence import compute_cell_status, compute_combined_confidence
 from app.pipeline.crop_utils import compute_crop_rect, crop_and_encode
 from app.pipeline.gemini import call_stage_c, get_client
+from app.pipeline.paddle_ocr import (
+    OCR_FAIL_CONFIDENCE,
+    OCR_SEMAPHORE,
+    OCR_SUCCESS_CONFIDENCE,
+    parse_ocr_value,
+    run_ocr,
+)
 from app.pipeline.schemas import ExtractionResponse
 from app.settings import settings
 
@@ -331,22 +339,58 @@ async def _process_field(
         )
         return False
 
-    # --- PaddleOCR stub (Slice 3.4 will replace) ----------------------------
-    ocr_result = None  # noqa: F841 — placeholder for the next slice's reconciliation.
-    # OCR is None → use Flash-only path.
-    value_confidence = float(extraction.self_confidence)
+    # --- PaddleOCR reconciliation (Slice 3.4) -------------------------------
+    # Run OCR (gated by OCR_ENABLED). Blocking → asyncio.to_thread, capped by
+    # OCR_SEMAPHORE so a burst of crops can't pin every CPU core.
+    if settings.ocr_enabled:
+        async with OCR_SEMAPHORE:
+            ocr_text = await asyncio.to_thread(run_ocr, crop_bytes)
+    else:
+        ocr_text = None
+
+    flash_conf = float(extraction.self_confidence)
+    ocr_conf = OCR_SUCCESS_CONFIDENCE if ocr_text else OCR_FAIL_CONFIDENCE
+
+    # Working copies of the extracted signals — reconciliation may overwrite.
+    raw_text: str | None = extraction.raw_text
+    parsed_value: Any = extraction.parsed_value
+    unit_seen: str | None = extraction.unit_seen
+    legible: bool = extraction.legible
+
+    expected_format = field.get("expected_format")
+    ocr_parsed = parse_ocr_value(ocr_text, expected_format) if ocr_text else None
+
+    if ocr_text is None:
+        # Row 3: OCR failed/empty → use Flash as-is.
+        value_confidence = flash_conf
+    elif not extraction.legible:
+        # Row 4: Flash illegible but OCR produced a value → use OCR.
+        value_confidence = ocr_conf
+        raw_text = ocr_text
+        parsed_value = ocr_parsed if ocr_parsed is not None else ocr_text
+        legible = True
+    else:
+        flash_norm = str(extraction.parsed_value).strip().lower()
+        ocr_norm = str(ocr_parsed if ocr_parsed is not None else ocr_text).strip().lower()
+        if flash_norm == ocr_norm:
+            # Row 1: agree → keep Flash value, take the more confident reading.
+            value_confidence = max(flash_conf, ocr_conf)
+        else:
+            # Row 2: disagree → mark illegible so status falls to needs_review.
+            value_confidence = min(flash_conf, ocr_conf) - 0.2
+            legible = False
 
     # --- Validation against expected_format ---------------------------------
-    validation_error = _validate_extraction(extraction, field.get("expected_format"))
+    validation_error = _validate_extraction(extraction, expected_format)
 
     # --- Confidence + status ------------------------------------------------
     combined = compute_combined_confidence(box_confidence, value_confidence)
     status = compute_cell_status(
         combined_confidence=combined,
-        legible=extraction.legible,
+        legible=legible,
         validation_error=validation_error,
         found=True,
-        parsed_value_is_null=extraction.parsed_value is None,
+        parsed_value_is_null=parsed_value is None,
     )
 
     failure_reason = "extraction_failed" if status == "failed" else None
@@ -357,10 +401,10 @@ async def _process_field(
         project_id=project_id,
         image_id=image_id,
         field_id=field_id,
-        raw_text=extraction.raw_text,
-        parsed_value=extraction.parsed_value,
-        unit_seen=extraction.unit_seen,
-        legible=extraction.legible,
+        raw_text=raw_text,
+        parsed_value=parsed_value,
+        unit_seen=unit_seen,
+        legible=legible,
         box_confidence=box_confidence,
         value_confidence=value_confidence,
         combined_confidence=combined,
