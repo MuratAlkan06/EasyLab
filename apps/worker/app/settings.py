@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model_pro: str = "gemini-2.5-pro"
     gemini_model_flash: str = "gemini-2.5-flash"
+    # Stage B (region detection) — separate alias so the deployment can swap
+    # detection independently from template generation if needed.
+    gemini_detection_model: str = "gemini-2.5-pro"
 
     internal_shared_secret: str
     fastapi_port: int = 8000
