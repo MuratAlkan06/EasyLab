@@ -13,13 +13,28 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("projects")
-    .select("id, name, status, created_at, updated_at")
+    .select(
+      "id, name, status, reference_image_id, created_at, updated_at, images(id, status)"
+    )
     .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false });
 
   if (error) return internalError(error.message);
 
-  return NextResponse.json({ projects: data });
+  const projects = (data ?? []).map((p) => {
+    const imgs = (p.images ?? []) as { id: string; status: string }[];
+    return {
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      reference_image_id: p.reference_image_id,
+      image_count: imgs.filter((i) => i.status !== "pending_upload").length,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+    };
+  });
+
+  return NextResponse.json({ projects });
 }
 
 export async function POST(req: NextRequest) {
