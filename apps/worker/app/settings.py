@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # Stage B (region detection) — separate alias so the deployment can swap
     # detection independently from template generation if needed.
     gemini_detection_model: str = "gemini-2.5-pro"
+    # Stage C (value extraction) — Flash by default for cost/latency. Same
+    # alias rationale as detection: deployments can swap independently.
+    gemini_extraction_model: str = "gemini-2.5-flash"
 
     internal_shared_secret: str
     fastapi_port: int = 8000

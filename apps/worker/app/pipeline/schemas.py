@@ -40,3 +40,18 @@ class DetectionResponse(BaseModel):
     """Stage B response: one DetectedField per template field, in input order."""
 
     fields: list[DetectedField]
+
+
+class ExtractionResponse(BaseModel):
+    """Stage C response: per-crop value extraction from Gemini Flash.
+
+    ``parsed_value`` is the typed value when the model can interpret the reading
+    (number, integer, text, or boolean) and ``None`` when extraction fails or
+    the value is not legible.
+    """
+
+    raw_text: str
+    parsed_value: float | int | str | bool | None = None
+    unit_seen: str | None = None
+    legible: bool = True
+    self_confidence: float = 0.0  # 0.0..1.0

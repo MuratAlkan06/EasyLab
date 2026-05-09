@@ -10,7 +10,11 @@ from __future__ import annotations
 from google import genai
 from google.genai import types
 
-from app.pipeline.schemas import DetectionResponse, TemplateGenerationResponse
+from app.pipeline.schemas import (
+    DetectionResponse,
+    ExtractionResponse,
+    TemplateGenerationResponse,
+)
 from app.settings import settings
 
 _client: genai.Client | None = None
@@ -130,3 +134,70 @@ async def call_stage_b(
         config=config,
     )
     return DetectionResponse.model_validate_json(response.text)
+
+
+def _build_stage_c_prompt(field: dict) -> str:
+    """Render the Stage C user prompt for a single cropped field.
+
+    ``field`` is ``{"field_name": str, "expected_format": dict | None}``.
+    ``expected_format`` follows the Stage A schema:
+    ``{"type": "number"|"text"|"boolean", "unit": str | None}``.
+    """
+    field_name = field["field_name"]
+    expected_format = field.get("expected_format") or {}
+
+    hint_lines = []
+    expected_type = expected_format.get("type")
+    expected_unit = expected_format.get("unit")
+    if expected_type:
+        hint_lines.append(f"- expected type: {expected_type}")
+    if expected_unit:
+        hint_lines.append(f"- expected unit: {expected_unit}")
+    hint_block = "\n".join(hint_lines)
+    if hint_block:
+        hint_block = f"\nHints for this field:\n{hint_block}\n"
+
+    return (
+        "You are reading a single field cropped out of a lab instrument image. "
+        f"The field is labelled '{field_name}'.{hint_block}\n"
+        "Return:\n"
+        "- raw_text: exactly what appears in the crop, character-for-character.\n"
+        "- parsed_value: the typed value (number/integer/string/boolean) or null "
+        "if you cannot read it.\n"
+        "- unit_seen: the unit string as it appears in the crop, or null if no "
+        "unit is shown.\n"
+        "- legible: false if the reading is too blurry/obscured/missing to be "
+        "trusted; true otherwise.\n"
+        "- self_confidence: your confidence in the reading, 0.0..1.0.\n"
+    )
+
+
+async def call_stage_c(
+    client: genai.Client,
+    model_name: str,
+    crop_bytes: bytes,
+    field: dict,
+) -> ExtractionResponse:
+    """Run a single Stage C generation call. Returns a parsed ExtractionResponse.
+
+    ``crop_bytes`` is a JPEG crop (≤768 px on the longest edge per
+    docs/ai-pipeline.md §5). ``field`` is
+    ``{"field_name": str, "expected_format": dict | None}``.
+    """
+    config = types.GenerateContentConfig(
+        temperature=0.0,
+        # NO thinking_config — cost control; spatial reasoning unnecessary here.
+        max_output_tokens=256,
+        response_mime_type="application/json",
+        response_json_schema=ExtractionResponse.model_json_schema(),
+    )
+
+    response = await client.aio.models.generate_content(
+        model=model_name,
+        contents=[
+            _build_stage_c_prompt(field),
+            types.Part.from_bytes(data=crop_bytes, mime_type="image/jpeg"),
+        ],
+        config=config,
+    )
+    return ExtractionResponse.model_validate_json(response.text)
