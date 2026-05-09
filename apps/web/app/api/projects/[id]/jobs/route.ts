@@ -13,7 +13,9 @@ const MAX_JOBS_PER_DAY =
   parseInt(process.env.MAX_JOBS_PER_WORKSPACE_PER_DAY ?? "5");
 const FASTAPI_URL =
   process.env.FASTAPI_INTERNAL_URL ?? "http://localhost:8000";
-const INTERNAL_SECRET = process.env.INTERNAL_SHARED_SECRET ?? "";
+if (!process.env.INTERNAL_SHARED_SECRET)
+  throw new Error("INTERNAL_SHARED_SECRET env var is required");
+const INTERNAL_SECRET: string = process.env.INTERNAL_SHARED_SECRET;
 
 export async function POST(
   _req: NextRequest,
@@ -26,14 +28,42 @@ export async function POST(
   // Verify project belongs to workspace
   const { data: project, error: projErr } = await supabase
     .from("projects")
-    .select("id, status")
+    .select("id, status, reference_image_id")
     .eq("id", projectId)
     .eq("workspace_id", workspaceId)
     .single();
 
   if (projErr || !project) return notFound("Project not found");
 
-  // Check no active job already running
+  // Precondition 1: reference image is set
+  if (!project.reference_image_id) {
+    return unprocessable("Project has no reference image set");
+  }
+
+  // Precondition 2: at least one template field exists
+  const { count: fieldCount, error: fldErr } = await supabase
+    .from("template_fields")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId);
+  if (fldErr) return internalError(fldErr.message);
+  if ((fieldCount ?? 0) < 1) {
+    return unprocessable("Project has no template fields defined");
+  }
+
+  // Precondition 3: at least 2 images in uploaded/done status
+  const { data: eligibleImages, error: imgErr } = await supabase
+    .from("images")
+    .select("id, is_reference")
+    .eq("project_id", projectId)
+    .in("status", ["uploaded", "done"]);
+  if (imgErr) return internalError(imgErr.message);
+  if ((eligibleImages?.length ?? 0) < 2) {
+    return unprocessable(
+      "Project must have at least 2 uploaded images to enqueue a job"
+    );
+  }
+
+  // Precondition 4: no active job already running
   const { data: activeJob } = await supabase
     .from("jobs")
     .select("id")
@@ -60,21 +90,40 @@ export async function POST(
     );
   }
 
-  // Fake jobs use 5 hardcoded steps (no images required in Phase 1)
-  const FAKE_STEPS = 5;
+  // Non-reference images become per-image tasks
+  const taskImages = (eligibleImages ?? []).filter((i) => !i.is_reference);
+  const progressTotal = taskImages.length;
 
   // Create job
   const { data: job, error: jobErr } = await supabase
     .from("jobs")
     .insert({
       project_id: projectId,
-      kind: "fake",
-      progress_total: FAKE_STEPS,
+      kind: "process_batch",
+      progress_total: progressTotal,
     })
-    .select("id, status, kind, progress_total, progress_done, created_at")
+    .select(
+      "id, status, kind, progress_total, progress_done, created_at"
+    )
     .single();
 
   if (jobErr) return internalError(jobErr.message);
+
+  // Insert image_tasks rows (one per non-reference uploaded/done image)
+  if (taskImages.length > 0) {
+    const taskRows = taskImages.map((img) => ({
+      job_id: job.id,
+      image_id: img.id,
+    }));
+    const { error: tasksErr } = await supabase
+      .from("image_tasks")
+      .insert(taskRows);
+    if (tasksErr) {
+      // Best-effort rollback of the job row
+      await supabase.from("jobs").delete().eq("id", job.id);
+      return internalError(tasksErr.message);
+    }
+  }
 
   // Upsert quota counter
   if (quotaFresh) {
@@ -93,8 +142,12 @@ export async function POST(
   // Kick the worker (best-effort — job will be picked up on next poll anyway)
   fetch(`${FASTAPI_URL}/internal/kick`, {
     method: "POST",
-    headers: { "x-internal-token": INTERNAL_SECRET },
+    headers: {
+      "x-internal-token": INTERNAL_SECRET,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ job_id: job.id }),
   }).catch(() => {});
 
-  return NextResponse.json({ job }, { status: 201 });
+  return NextResponse.json({ job }, { status: 202 });
 }
