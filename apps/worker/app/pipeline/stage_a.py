@@ -121,9 +121,7 @@ async def _load_reference_storage_path(pool: asyncpg.Pool, project_id) -> str:
         project_id,
     )
     if row is None:
-        raise RuntimeError(
-            f"Stage A: no reference image set for project {project_id}"
-        )
+        raise RuntimeError(f"Stage A: no reference image set for project {project_id}")
     return row["storage_path"]
 
 
@@ -133,9 +131,7 @@ def _download_reference_bytes(storage_path: str) -> bytes:
         settings.supabase_url,
         settings.supabase_service_role_key,
     )
-    return supabase.storage.from_(settings.supabase_storage_bucket).download(
-        storage_path
-    )
+    return supabase.storage.from_(settings.supabase_storage_bucket).download(storage_path)
 
 
 async def run_stage_a(pool: asyncpg.Pool, job: dict) -> None:
@@ -144,9 +140,7 @@ async def run_stage_a(pool: asyncpg.Pool, job: dict) -> None:
 
     fields = await _load_fields(pool, project_id)
     if not fields:
-        raise RuntimeError(
-            f"Stage A: no template fields for project {project_id}"
-        )
+        raise RuntimeError(f"Stage A: no template fields for project {project_id}")
 
     storage_path = await _load_reference_storage_path(pool, project_id)
 
@@ -159,9 +153,7 @@ async def run_stage_a(pool: asyncpg.Pool, job: dict) -> None:
     degraded = False
     descriptions_by_name: dict[str, tuple[str, dict | None]] = {}
     try:
-        parsed = await _call_with_retry(
-            client, settings.gemini_model_pro, image_bytes, fields
-        )
+        parsed = await _call_with_retry(client, settings.gemini_model_pro, image_bytes, fields)
         for ft in parsed.fields:
             descriptions_by_name[ft.field_name] = (
                 ft.semantic_description,
@@ -185,9 +177,7 @@ async def run_stage_a(pool: asyncpg.Pool, job: dict) -> None:
             expected_format = None
             degraded = degraded or True
 
-        expected_format_json = (
-            json.dumps(expected_format) if expected_format is not None else None
-        )
+        expected_format_json = json.dumps(expected_format) if expected_format is not None else None
         await pool.execute(
             """
             UPDATE template_fields

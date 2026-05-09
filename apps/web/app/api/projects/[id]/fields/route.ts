@@ -140,13 +140,14 @@ export async function POST(
     .order("display_order", { ascending: true });
   if (upsertErr) return internalError(upsertErr.message);
 
-  // Step 2: delete fields no longer in the submitted list
-  const submittedNames = parsed.data.fields.map((f) => f.field_name);
+  // Step 2: delete fields no longer in the submitted list (use IDs to avoid
+  // comma-escaping issues with field names)
+  const upsertedIds = (upserted ?? []).map((f) => f.id);
   const { error: delErr } = await supabase
     .from("template_fields")
     .delete()
     .eq("project_id", projectId)
-    .not("field_name", "in", `(${submittedNames.join(",")})`);
+    .not("id", "in", `(${upsertedIds.join(",")})`);
   if (delErr) return internalError(delErr.message);
 
   // Promote project to 'annotated' if at least one field saved

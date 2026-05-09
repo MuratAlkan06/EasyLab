@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -76,12 +76,12 @@ function ProcessPage() {
   useEffect(() => {
     if (project && !project.has_active_job) {
       if (project.latest_job_id) {
-        setActiveJobId(project.latest_job_id);
+        startTransition(() => setActiveJobId(project.latest_job_id));
       } else {
-        setShowModal(true);
+        startTransition(() => setShowModal(true));
       }
     } else if (project?.has_active_job && project.latest_job_id) {
-      setActiveJobId(project.latest_job_id);
+      startTransition(() => setActiveJobId(project.latest_job_id));
     }
   }, [project]);
 
@@ -102,7 +102,17 @@ function ProcessPage() {
   });
 
   const job = jobData?.job;
-  const tasks = jobData?.tasks ?? [];
+  const tasks = useMemo(() => jobData?.tasks ?? [], [jobData]);
+
+  // Update browser tab title during processing (F8)
+  useEffect(() => {
+    if (job && job.status !== "succeeded" && job.status !== "failed" && job.status !== "cancelled") {
+      document.title = `(${job.progress_done}/${job.progress_total}) EasyLab — Processing`;
+    } else {
+      document.title = "EasyLab";
+    }
+    return () => { document.title = "EasyLab"; };
+  }, [job]);
 
   // Handle job completion
   useEffect(() => {

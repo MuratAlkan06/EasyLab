@@ -149,5 +149,5 @@ export async function POST(
     body: JSON.stringify({ job_id: job.id }),
   }).catch(() => {});
 
-  return NextResponse.json({ job }, { status: 201 });
+  return NextResponse.json({ job }, { status: 202 });
 }

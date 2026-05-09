@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -73,7 +74,7 @@ export default function AnnotateClient({ projectId }: { projectId: string }) {
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const rectRefs = useRef<Map<string, Konva.Rect>>(new Map());
-  const focusFieldIdRef = useRef<string | null>(null);
+  const [focusFieldId, setFocusFieldId] = useState<string | null>(null);
 
   const [mode, setMode] = useState<Mode>("draw");
   const [fields, setFields] = useState<FieldState[]>([]);
@@ -147,7 +148,7 @@ export default function AnnotateClient({ projectId }: { projectId: string }) {
       color: COLOR_PALETTE[idx % COLOR_PALETTE.length],
       expected_format: f.expected_format ?? undefined,
     }));
-    if (hydrated.length > 0) setFields(hydrated);
+    if (hydrated.length > 0) startTransition(() => setFields(hydrated));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldsQuery.data]);
 
@@ -279,7 +280,7 @@ export default function AnnotateClient({ projectId }: { projectId: string }) {
       height: nh,
       color: COLOR_PALETTE[fields.length % COLOR_PALETTE.length],
     };
-    focusFieldIdRef.current = id;
+    setFocusFieldId(id);
     setFields((prev) => [...prev, newField]);
   }, [mode, drawStart, drawCurrent, stageSize, fields.length]);
 
@@ -506,7 +507,8 @@ export default function AnnotateClient({ projectId }: { projectId: string }) {
       <FieldSidebar
         fields={fields}
         selectedId={selectedId}
-        focusFieldIdRef={focusFieldIdRef}
+        focusFieldId={focusFieldId}
+        onClearFocus={() => setFocusFieldId(null)}
         onSelect={(id) => {
           setMode("select");
           setSelectedId(id);
@@ -560,7 +562,8 @@ function Toolbar({
 type SidebarProps = {
   fields: FieldState[];
   selectedId: string | null;
-  focusFieldIdRef: React.RefObject<string | null>;
+  focusFieldId: string | null;
+  onClearFocus: () => void;
   onSelect: (id: string) => void;
   onUpdate: (id: string, patch: Partial<FieldState>) => void;
   onDelete: (id: string) => void;
@@ -571,7 +574,8 @@ type SidebarProps = {
 function FieldSidebar({
   fields,
   selectedId,
-  focusFieldIdRef,
+  focusFieldId,
+  onClearFocus,
   onSelect,
   onUpdate,
   onDelete,
@@ -600,10 +604,8 @@ function FieldSidebar({
               key={f.id}
               field={f}
               selected={selectedId === f.id}
-              autoFocus={focusFieldIdRef.current === f.id}
-              onAutoFocused={() => {
-                focusFieldIdRef.current = null;
-              }}
+              autoFocus={focusFieldId === f.id}
+              onAutoFocused={onClearFocus}
               onSelect={() => onSelect(f.id)}
               onChange={(patch) => onUpdate(f.id, patch)}
               onDelete={() => onDelete(f.id)}

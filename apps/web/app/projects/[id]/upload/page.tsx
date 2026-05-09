@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -54,9 +54,11 @@ function UploadPage() {
   useEffect(() => {
     if (existingImages?.images) {
       const uploaded = existingImages.images.filter((i) => i.status !== "pending_upload");
-      setImages(uploaded);
-      const ref = uploaded.find((i) => i.is_reference);
-      if (ref) setReferenceId(ref.id);
+      startTransition(() => {
+        setImages(uploaded);
+        const ref = uploaded.find((i) => i.is_reference);
+        if (ref) setReferenceId(ref.id);
+      });
     }
   }, [existingImages]);
 
