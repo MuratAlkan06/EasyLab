@@ -13,7 +13,9 @@ const MAX_JOBS_PER_DAY =
   parseInt(process.env.MAX_JOBS_PER_WORKSPACE_PER_DAY ?? "5");
 const FASTAPI_URL =
   process.env.FASTAPI_INTERNAL_URL ?? "http://localhost:8000";
-const INTERNAL_SECRET = process.env.INTERNAL_SHARED_SECRET ?? "";
+if (!process.env.INTERNAL_SHARED_SECRET)
+  throw new Error("INTERNAL_SHARED_SECRET env var is required");
+const INTERNAL_SECRET: string = process.env.INTERNAL_SHARED_SECRET;
 
 export async function POST(
   _req: NextRequest,

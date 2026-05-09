@@ -16,7 +16,7 @@ export async function GET(
   const { data: project, error: projErr } = await supabase
     .from("projects")
     .select(
-      "id, name, status, reference_image_id, created_at, updated_at"
+      "id, name, status, reference_image_id, template_quality, created_at, updated_at"
     )
     .eq("id", projectId)
     .eq("workspace_id", workspaceId)
@@ -64,6 +64,7 @@ export async function GET(
     name: project.name,
     status: project.status,
     reference_image_id: project.reference_image_id,
+    template_quality: project.template_quality,
     image_count: imageCount ?? 0,
     field_count: fieldCount ?? 0,
     has_active_job: !!activeJob,

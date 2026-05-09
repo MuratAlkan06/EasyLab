@@ -5,7 +5,7 @@ import { getOrCreateWorkspace } from "@/lib/workspace";
 import { conflict, internalError, validationError } from "@/lib/errors";
 
 const CreateProjectSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z.string().min(1).max(120),
 });
 
 export async function GET() {

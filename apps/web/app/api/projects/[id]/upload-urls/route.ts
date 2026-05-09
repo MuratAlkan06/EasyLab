@@ -10,13 +10,8 @@ import {
 } from "@/lib/errors";
 
 const BUCKET = "easylab";
-const ALLOWED_MIME = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/tiff",
-] as const;
-const MAX_BYTES = 52_428_800; // 50 MB
+const ALLOWED_MIME = ["image/jpeg", "image/png"] as const;
+const MAX_BYTES = 20_971_520; // 20 MB
 
 const FileEntrySchema = z.object({
   filename: z.string().min(1).max(255),

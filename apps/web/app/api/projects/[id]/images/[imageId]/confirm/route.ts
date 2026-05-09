@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getWorkspaceId } from "@/lib/workspace";
 import {
   conflict,
+  errorResponse,
   internalError,
   notFound,
   validationError,
@@ -51,7 +52,7 @@ export async function POST(
   // Fetch image and verify it is in pending_upload
   const { data: image, error: imgErr } = await supabase
     .from("images")
-    .select("id, status")
+    .select("id, status, storage_path")
     .eq("id", imageId)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -59,6 +60,22 @@ export async function POST(
   if (!image) return notFound("Image not found");
   if (image.status !== "pending_upload") {
     return conflict(`Image is in status '${image.status}', not 'pending_upload'`);
+  }
+
+  // Verify the object was actually uploaded
+  const storagePath = image.storage_path as string;
+  const { data: meta, error: metaErr } = await supabase.storage
+    .from("easylab")
+    .list(storagePath.substring(0, storagePath.lastIndexOf("/")), {
+      search: storagePath.substring(storagePath.lastIndexOf("/") + 1),
+    });
+
+  if (metaErr || !meta || meta.length === 0) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      "File not found in storage — upload may have failed"
+    );
   }
 
   const updates: Record<string, unknown> = { status: "uploaded" };

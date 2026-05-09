@@ -119,13 +119,9 @@ export async function POST(
     return validationError("field_name must be unique within submitted array");
   }
 
-  // Replace operation: delete all existing fields then insert new
-  const { error: delErr } = await supabase
-    .from("template_fields")
-    .delete()
-    .eq("project_id", projectId);
-  if (delErr) return internalError(delErr.message);
-
+  // Replace operation: upsert-then-delete-orphans so a failed write
+  // never leaves the project in a "missing fields" state.
+  // Step 1: upsert all submitted fields (insert or update by field_name)
   const rows = parsed.data.fields.map((f, idx) => ({
     project_id: projectId,
     field_name: f.field_name,
@@ -135,17 +131,26 @@ export async function POST(
     expected_format: f.expected_format ?? null,
   }));
 
-  const { data: inserted, error: insErr } = await supabase
+  const { data: upserted, error: upsertErr } = await supabase
     .from("template_fields")
-    .insert(rows)
+    .upsert(rows, { onConflict: "project_id,field_name" })
     .select(
       "id, field_name, display_order, reference_box, semantic_description, expected_format"
     )
     .order("display_order", { ascending: true });
-  if (insErr) return internalError(insErr.message);
+  if (upsertErr) return internalError(upsertErr.message);
+
+  // Step 2: delete fields no longer in the submitted list
+  const submittedNames = parsed.data.fields.map((f) => f.field_name);
+  const { error: delErr } = await supabase
+    .from("template_fields")
+    .delete()
+    .eq("project_id", projectId)
+    .not("field_name", "in", `(${submittedNames.join(",")})`);
+  if (delErr) return internalError(delErr.message);
 
   // Promote project to 'annotated' if at least one field saved
-  if ((inserted?.length ?? 0) >= 1) {
+  if ((upserted?.length ?? 0) >= 1) {
     await supabase
       .from("projects")
       .update({ status: "annotated" })
@@ -153,5 +158,5 @@ export async function POST(
       .eq("status", "draft");
   }
 
-  return NextResponse.json({ fields: inserted ?? [] });
+  return NextResponse.json({ fields: upserted ?? [] });
 }

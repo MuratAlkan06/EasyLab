@@ -68,7 +68,7 @@ function ProcessPage() {
     queryFn: async () => {
       const res = await fetch(`/api/projects/${projectId}`);
       if (!res.ok) throw new Error("Project not found");
-      return res.json() as Promise<{ id: string; has_active_job: boolean; latest_job_id: string | null; status: string }>;
+      return res.json() as Promise<{ id: string; has_active_job: boolean; latest_job_id: string | null; status: string; template_quality: string | null }>;
     },
   });
 
@@ -227,6 +227,16 @@ function ProcessPage() {
 
       <main className="max-w-3xl mx-auto px-8 py-10 space-y-6">
         <h2 className="text-xl font-semibold text-zinc-900">Processing</h2>
+
+        {project?.template_quality === "degraded" && (
+          <div className="flex items-start gap-3 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <AlertTriangle size={18} className="text-yellow-600 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-yellow-800">
+              Template quality is degraded — Gemini could not analyse the reference image.
+              Extraction accuracy may be lower.
+            </p>
+          </div>
+        )}
 
         {job ? (
           <>
