@@ -30,6 +30,13 @@ dev = [
 requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
+# Scope setuptools auto-discovery to the `app` package. Without this, flat
+# layout discovery walks the repo root and trips over `alembic/` + `tests/`
+# as additional top-level packages, breaking `pip install -e`.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
