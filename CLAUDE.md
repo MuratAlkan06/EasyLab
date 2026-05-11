@@ -8,14 +8,22 @@ Core concept: "Label one image once → AI learns what each region means → AI 
 
 ## Current Phase
 
-Phase 1 complete. Start with Phase 2. Do not skip phases.
+Phases 1–4 complete on main. Phase 5 + Phase 6 partial in flight as open PRs.
+Do not skip phases.
 
 1. ✅ Monorepo scaffold + docker-compose + Supabase migrations + fake job smoke test (no AI)
-2. Template generation — Gemini 2.5 Pro enriches annotations with semantic_description
-3. Full detection + extraction — review table populates
-4. Crops + confidence + needs_review — crop images shown in review table
-5. CSV export + cell_overrides survive re-runs
-6. Polish — Supabase Realtime, circuit breaker, image validation, quota UI
+2. ✅ Template generation — Gemini 2.5 Pro enriches annotations with semantic_description (PR #16)
+3. ✅ Full detection + extraction — pipeline complete (Stages B + C + PaddleOCR) (PR #18). Detection accuracy is acknowledged unresolved; see `memory/project_phase3_detection_status.md`. Visual reference-crop matching attempt is stashed.
+4. ✅ Crops + confidence + needs_review — crop images shown in review table (landed inside Phase 3 slices, PR #18)
+5. 🟡 CSV export + cell_overrides survive re-runs — PR #19 open
+6. 🟡 Polish — partial:
+   - ✅ CI build step + image quota (`MAX_IMAGES_PER_WORKSPACE_PER_DAY`) (PR #22)
+   - 🟡 Server-trusted size + mime on image confirm — PR #23 open
+   - 🟡 Gemini circuit breaker + global token budget + worker pytest in CI — PR #24 open
+   - 🟡 Vitest scaffold + csv tests — PR #19 open
+   - ⏳ Supabase Realtime on processing page (currently polls every 1.5s)
+   - ⏳ Per-cell width/height verification on image confirm (needs byte decode)
+   - ⏳ Per-workspace token-cap enforcement (`tokens_today` populated, no reader yet)
 
 ---
 
