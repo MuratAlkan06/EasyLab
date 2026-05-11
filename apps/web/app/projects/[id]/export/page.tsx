@@ -45,7 +45,7 @@ function ExportPage() {
   const handleDownload = useCallback(async () => {
     setDownloading(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/export`);
+      const res = await fetch(`/api/projects/${projectId}/export.csv`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error?.message ?? `Export failed (${res.status})`);
