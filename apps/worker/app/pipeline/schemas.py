@@ -20,3 +20,38 @@ class TemplateGenerationResponse(BaseModel):
     """Stage A response: one FieldTemplate per annotated field, in input order."""
 
     fields: list[FieldTemplate]
+
+
+class DetectedField(BaseModel):
+    """Per-field detection result returned by Stage B.
+
+    `box` is Gemini-native ``[ymin, xmin, ymax, xmax]`` in 0..1000 space.
+    Always ``None`` when ``found`` is False; the worker also defensively
+    treats a missing/None box on ``found=True`` as not-found.
+    """
+
+    field_name: str
+    found: bool
+    box: list[int] | None = None
+    box_confidence: float = 0.0
+
+
+class DetectionResponse(BaseModel):
+    """Stage B response: one DetectedField per template field, in input order."""
+
+    fields: list[DetectedField]
+
+
+class ExtractionResponse(BaseModel):
+    """Stage C response: per-crop value extraction from Gemini Flash.
+
+    ``parsed_value`` is the typed value when the model can interpret the reading
+    (number, integer, text, or boolean) and ``None`` when extraction fails or
+    the value is not legible.
+    """
+
+    raw_text: str
+    parsed_value: float | int | str | bool | None = None
+    unit_seen: str | None = None
+    legible: bool = True
+    self_confidence: float = 0.0  # 0.0..1.0
