@@ -16,6 +16,14 @@ const ConfirmSchema = z.object({
   height_px: z.number().int().min(1).optional(),
 });
 
+const ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/tiff",
+]);
+const MAX_BYTES = 52_428_800; // 50 MB — must match upload-urls validation
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; imageId: string }> }
@@ -78,9 +86,47 @@ export async function POST(
     );
   }
 
-  const updates: Record<string, unknown> = { status: "uploaded" };
-  if (parsed.data.size_bytes !== undefined)
-    updates.size_bytes = parsed.data.size_bytes;
+  // Server-side validation against the bytes Supabase Storage actually
+  // accepted, not what the client claimed. Storage's list response carries
+  // mime + size in metadata; we trust those over the client body.
+  const stored = meta[0] as {
+    metadata?: { mimetype?: string; size?: number } | null;
+  };
+  const storedMime = stored.metadata?.mimetype;
+  const storedSize = stored.metadata?.size;
+
+  if (!storedMime || !ALLOWED_MIME.has(storedMime)) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      `Unsupported image type${storedMime ? ` '${storedMime}'` : ""}. Allowed: JPEG, PNG, WebP, TIFF.`
+    );
+  }
+
+  if (typeof storedSize !== "number" || storedSize < 1) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      "Uploaded file is empty or unreadable"
+    );
+  }
+
+  if (storedSize > MAX_BYTES) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      `File exceeds maximum size of ${Math.floor(MAX_BYTES / 1024 / 1024)} MB`
+    );
+  }
+
+  // size_bytes and mime_type come from storage (authoritative). width/height
+  // are still client-supplied — verifying them would require downloading
+  // the bytes and decoding the header, which is left for a future iteration.
+  const updates: Record<string, unknown> = {
+    status: "uploaded",
+    size_bytes: storedSize,
+    mime_type: storedMime,
+  };
   if (parsed.data.width_px !== undefined)
     updates.width_px = parsed.data.width_px;
   if (parsed.data.height_px !== undefined)
