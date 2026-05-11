@@ -29,6 +29,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   ChevronRight,
+  Download,
   Layers,
   Loader2,
   Pencil,
@@ -511,6 +512,13 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
               </span>
             )}
           </button>
+          <Link
+            href={`/projects/${projectId}/export`}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-zinc-900 text-white hover:bg-zinc-800"
+          >
+            <Download size={12} />
+            Export CSV
+          </Link>
         </div>
       </div>
 
