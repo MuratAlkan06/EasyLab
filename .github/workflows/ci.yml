@@ -42,6 +42,14 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Build
+        env:
+          SUPABASE_URL: https://placeholder.local
+          SUPABASE_SERVICE_ROLE_KEY: placeholder
+          INTERNAL_SHARED_SECRET: placeholder
+          GEMINI_API_KEY: placeholder
+        run: pnpm build
+
   worker:
     name: Worker — lint
     runs-on: ubuntu-latest
