@@ -54,6 +54,7 @@ def _get_ocr() -> object:
             if _ocr_instance is None:
                 import numpy as np  # noqa: F401 — ensure numpy is imported before paddle
                 from paddleocr import PaddleOCR
+
                 _ocr_instance = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
     return _ocr_instance
 
