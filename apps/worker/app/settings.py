@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     image_concurrency: int = 5
     confidence_threshold: float = 0.7
 
+    # Spend controls (see app/pipeline/spend_controls.py).
+    gemini_breaker_threshold: int = 5
+    gemini_breaker_cooldown_seconds: int = 300
+    global_daily_token_budget: int = 50_000_000
+
     log_level: str = "INFO"
 
     class Config:

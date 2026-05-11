@@ -29,6 +29,7 @@ from tenacity import (
     wait_fixed,
 )
 
+from app.pipeline import spend_controls
 from app.pipeline.gemini import call_stage_a, get_client
 from app.pipeline.image_utils import preprocess_for_stage_a
 from app.pipeline.schemas import TemplateGenerationResponse
@@ -64,11 +65,12 @@ def _synthesize_fallback(field: dict) -> str:
 
 async def _call_with_retry(
     client, model_name: str, image_bytes: bytes, fields: list[dict]
-) -> TemplateGenerationResponse:
+) -> tuple[TemplateGenerationResponse, int]:
     """Call Stage A and validate; retry once on any failure (tenacity).
 
-    Raises the underlying exception if both attempts fail so the caller can
-    fall back to synthesized descriptions.
+    Returns the parsed response and the total Gemini token count for spend
+    accounting. Raises the underlying exception if both attempts fail so the
+    caller can fall back to synthesized descriptions.
     """
     try:
         async for attempt in AsyncRetrying(
@@ -77,8 +79,10 @@ async def _call_with_retry(
             reraise=True,
         ):
             with attempt:
-                text = await call_stage_a(client, model_name, image_bytes, fields)
-                return TemplateGenerationResponse.model_validate_json(text)
+                response = await call_stage_a(client, model_name, image_bytes, fields)
+                parsed = TemplateGenerationResponse.model_validate_json(response.text)
+                tokens = spend_controls.extract_total_tokens(response)
+                return parsed, tokens
     except RetryError as exc:  # defensive: reraise=True should already unwrap
         raise exc.last_attempt.exception() from exc
     raise RuntimeError("unreachable: AsyncRetrying exited without yielding")
@@ -134,6 +138,14 @@ def _download_reference_bytes(storage_path: str) -> bytes:
     return supabase.storage.from_(settings.supabase_storage_bucket).download(storage_path)
 
 
+async def _workspace_id_for_project(pool: asyncpg.Pool, project_id):
+    row = await pool.fetchrow(
+        "SELECT workspace_id FROM projects WHERE id = $1",
+        project_id,
+    )
+    return row["workspace_id"] if row else None
+
+
 async def run_stage_a(pool: asyncpg.Pool, job: dict) -> None:
     project_id = job["project_id"]
     log.info("stage_a.start", project_id=str(project_id))
@@ -143,6 +155,7 @@ async def run_stage_a(pool: asyncpg.Pool, job: dict) -> None:
         raise RuntimeError(f"Stage A: no template fields for project {project_id}")
 
     storage_path = await _load_reference_storage_path(pool, project_id)
+    workspace_id = await _workspace_id_for_project(pool, project_id)
 
     # Storage download and Pillow ops are blocking; offload to a thread.
     raw_bytes = await asyncio.to_thread(_download_reference_bytes, storage_path)
@@ -153,18 +166,29 @@ async def run_stage_a(pool: asyncpg.Pool, job: dict) -> None:
     degraded = False
     descriptions_by_name: dict[str, tuple[str, dict | None]] = {}
     try:
-        parsed = await _call_with_retry(client, settings.gemini_model_pro, image_bytes, fields)
+        parsed, tokens_used = await _call_with_retry(
+            client, settings.gemini_model_pro, image_bytes, fields
+        )
+        spend_controls.record_success()
+        if workspace_id is not None:
+            await spend_controls.record_token_usage(pool, workspace_id, tokens_used)
         for ft in parsed.fields:
             descriptions_by_name[ft.field_name] = (
                 ft.semantic_description,
                 ft.expected_format,
             )
     except Exception as exc:  # noqa: BLE001
+        tripped = spend_controls.record_failure(exc)
         log.error(
             "stage_a.degraded_fallback",
             project_id=str(project_id),
             error=str(exc),
+            breaker_tripped=tripped,
         )
+        if tripped:
+            # Pause this job; the loop will pick it back up after the cooldown.
+            await spend_controls.pause_job(pool, job["id"])
+            raise
         degraded = True
 
     # Write per-field results. Any field missing from the model response (or
