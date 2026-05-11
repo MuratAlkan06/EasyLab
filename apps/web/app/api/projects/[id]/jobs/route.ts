@@ -11,6 +11,8 @@ import {
 
 const MAX_JOBS_PER_DAY =
   parseInt(process.env.MAX_JOBS_PER_WORKSPACE_PER_DAY ?? "5");
+const MAX_IMAGES_PER_DAY =
+  parseInt(process.env.MAX_IMAGES_PER_WORKSPACE_PER_DAY ?? "200");
 const FASTAPI_URL =
   process.env.FASTAPI_INTERNAL_URL ?? "http://localhost:8000";
 if (!process.env.INTERNAL_SHARED_SECRET)
@@ -77,12 +79,13 @@ export async function POST(
   const today = new Date().toISOString().slice(0, 10);
   const { data: quota } = await supabase
     .from("workspace_quota")
-    .select("jobs_today, quota_date")
+    .select("jobs_today, images_today, quota_date")
     .eq("workspace_id", workspaceId)
     .maybeSingle();
 
   const quotaFresh = quota && quota.quota_date === today;
   const jobsToday = quotaFresh ? quota.jobs_today : 0;
+  const imagesToday = quotaFresh ? (quota.images_today ?? 0) : 0;
 
   if (jobsToday >= MAX_JOBS_PER_DAY) {
     return quotaExceeded(
@@ -93,6 +96,14 @@ export async function POST(
   // Non-reference images become per-image tasks
   const taskImages = (eligibleImages ?? []).filter((i) => !i.is_reference);
   const progressTotal = taskImages.length;
+
+  if (imagesToday + progressTotal > MAX_IMAGES_PER_DAY) {
+    return quotaExceeded(
+      `This job would process ${progressTotal} images; only ${
+        MAX_IMAGES_PER_DAY - imagesToday
+      } remaining today (daily limit ${MAX_IMAGES_PER_DAY}). Try again tomorrow.`
+    );
+  }
 
   // Create job
   const { data: job, error: jobErr } = await supabase
@@ -125,16 +136,20 @@ export async function POST(
     }
   }
 
-  // Upsert quota counter
+  // Upsert quota counters
   if (quotaFresh) {
     await supabase
       .from("workspace_quota")
-      .update({ jobs_today: jobsToday + 1 })
+      .update({
+        jobs_today: jobsToday + 1,
+        images_today: imagesToday + progressTotal,
+      })
       .eq("workspace_id", workspaceId);
   } else {
     await supabase.from("workspace_quota").upsert({
       workspace_id: workspaceId,
       jobs_today: 1,
+      images_today: progressTotal,
       quota_date: today,
     });
   }
