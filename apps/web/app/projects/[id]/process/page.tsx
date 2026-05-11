@@ -170,7 +170,7 @@ function ProcessPage() {
   const pendingCount = tasks.filter((t) => t.status === "pending").length;
   const progressPct =
     (job?.progress_total ?? 0) > 0
-      ? Math.round(((job?.progress_done ?? 0) / (job?.progress_total ?? 1)) * 100)
+      ? Math.min(100, Math.round(((job?.progress_done ?? 0) / (job?.progress_total ?? 1)) * 100))
       : 0;
 
   return (
@@ -306,7 +306,7 @@ function ProcessPage() {
                     <span className="text-sm text-zinc-700 truncate flex-1 min-w-0">
                       {task.filename}
                     </span>
-                    <span className="text-xs text-zinc-400 capitalize">{task.status}</span>
+                    <span className="text-xs text-zinc-400 capitalize">{task.status.replace("_", " ")}</span>
                   </div>
                 ))}
               </div>
