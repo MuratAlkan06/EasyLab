@@ -168,6 +168,23 @@ async def global_tokens_today(pool: asyncpg.Pool) -> int:
     return int(row["total"]) if row else 0
 
 
+async def workspace_tokens_today(pool: asyncpg.Pool, workspace_id) -> int:
+    """Read tokens_today for a single workspace. Returns 0 if no row exists or
+    the cached row is for a previous day (rollover happens lazily on the next
+    write)."""
+    today = date.today()
+    row = await pool.fetchrow(
+        """
+        SELECT tokens_today
+        FROM workspace_quota
+        WHERE workspace_id = $1 AND quota_date = $2::date
+        """,
+        workspace_id,
+        today,
+    )
+    return int(row["tokens_today"]) if row else 0
+
+
 async def assert_global_budget_available(pool: asyncpg.Pool) -> None:
     """Raise if the global daily token budget is already exhausted.
 
@@ -179,6 +196,26 @@ async def assert_global_budget_available(pool: asyncpg.Pool) -> None:
         raise BudgetExceeded(
             f"Global daily token budget exhausted "
             f"({used:,} of {settings.global_daily_token_budget:,} used)."
+        )
+
+
+async def assert_workspace_budget_available(
+    pool: asyncpg.Pool, workspace_id
+) -> None:
+    """Raise if this workspace has already burned through its daily token cap.
+
+    Same soft-check semantics as the global budget — refuses new jobs, lets
+    in-flight ones finish."""
+    if workspace_id is None:
+        return
+    cap = settings.workspace_daily_token_budget
+    if cap <= 0:
+        return
+    used = await workspace_tokens_today(pool, workspace_id)
+    if used >= cap:
+        raise BudgetExceeded(
+            f"Workspace daily token budget exhausted "
+            f"({used:,} of {cap:,} used)."
         )
 
 

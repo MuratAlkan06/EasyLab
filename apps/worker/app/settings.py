@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     gemini_breaker_threshold: int = 5
     gemini_breaker_cooldown_seconds: int = 300
     global_daily_token_budget: int = 50_000_000
+    # Per-workspace daily token cap (sum of tokens_today). Set to 0 to disable.
+    workspace_daily_token_budget: int = 2_000_000
 
     # PaddleOCR runs alongside Gemini Flash in Stage C. Set to false to skip
     # loading the paddle stack at runtime (e.g. CI, local dev without OCR).

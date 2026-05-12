@@ -22,16 +22,24 @@ async def handle_process_batch(pool: asyncpg.Pool, job: dict) -> None:
 
     log.info("process_batch.start", job_id=str(job_id), project_id=str(project_id))
 
-    # Refuse to start a new job if we've already burned through the global
-    # daily token budget. Pause the job until tomorrow so the user gets a clear
-    # path back instead of an unhelpful failure.
+    # Resolve the workspace_id for the per-workspace cap check below.
+    workspace_row = await pool.fetchrow(
+        "SELECT workspace_id FROM projects WHERE id = $1", project_id
+    )
+    workspace_id = workspace_row["workspace_id"] if workspace_row else None
+
+    # Refuse to start a new job if either budget is exhausted. Pause the job
+    # until tomorrow so the user gets a clear path back instead of an
+    # unhelpful failure.
     try:
         await spend_controls.assert_global_budget_available(pool)
+        await spend_controls.assert_workspace_budget_available(pool, workspace_id)
     except spend_controls.BudgetExceeded as exc:
         log.warning(
             "process_batch.budget_exhausted",
             job_id=str(job_id),
             project_id=str(project_id),
+            workspace_id=str(workspace_id) if workspace_id else None,
             error=str(exc),
         )
         await spend_controls.pause_job(pool, job_id, seconds=24 * 60 * 60)
