@@ -178,6 +178,9 @@ function ProcessPage() {
   const doneCount = tasks.filter((t) => t.status === "done").length;
   const failedCount = tasks.filter((t) => t.status === "failed").length;
   const pendingCount = tasks.filter((t) => t.status === "pending").length;
+  const inProgressCount = tasks.filter(
+    (t) => t.status === "detecting" || t.status === "extracting",
+  ).length;
   const progressPct =
     (job?.progress_total ?? 0) > 0
       ? Math.min(100, Math.round(((job?.progress_done ?? 0) / (job?.progress_total ?? 1)) * 100))
@@ -234,6 +237,7 @@ function ProcessPage() {
             <div className="flex items-center justify-between gap-4 text-sm flex-wrap">
               <div className="flex items-center gap-3 flex-wrap">
                 <Stat label="Done" value={doneCount} tone="green" />
+                <Stat label="In progress" value={inProgressCount} tone="blue" />
                 <Stat label="Failed" value={failedCount} tone="red" />
                 <Stat label="Pending" value={pendingCount} tone="neutral" />
               </div>
@@ -334,12 +338,13 @@ function Stat({
 }: {
   label: string;
   value: number;
-  tone: "neutral" | "green" | "red";
+  tone: "neutral" | "green" | "red" | "blue";
 }) {
   const colors: Record<typeof tone, string> = {
     neutral: "text-[var(--muted)]",
     green: "text-emerald-600 dark:text-emerald-400",
     red: "text-red-600 dark:text-red-400",
+    blue: "text-blue-600 dark:text-blue-400",
   };
   return (
     <span className="inline-flex items-center gap-1.5 text-xs">
