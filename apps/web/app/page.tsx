@@ -4,9 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Trash2, ArrowRight, FlaskConical, ImageIcon, X } from "lucide-react";
+import { Plus, Trash2, ArrowRight, FlaskConical, ImageIcon, X, Gauge } from "lucide-react";
 import { ReactQueryProvider } from "@/lib/query-client";
-import { Shell, Button, Card, Badge, PageTitle } from "@/components/Shell";
+import { Shell, Button, Card, Badge, PageTitle, QuotaBar, useQuota } from "@/components/Shell";
 
 type Project = {
   id: string;
@@ -234,6 +234,39 @@ function Dashboard() {
           </ul>
         </Card>
       )}
+
+      <QuotaPanel />
     </Shell>
+  );
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function QuotaPanel() {
+  const { data, isLoading } = useQuota();
+  if (isLoading || !data) return null;
+
+  return (
+    <Card className="mt-8 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Gauge size={15} className="text-[var(--muted)]" />
+        <h3 className="text-sm font-semibold text-[var(--foreground)]">Today&apos;s usage</h3>
+        <span className="text-[10px] text-[var(--subtle)] ml-auto">Resets at UTC midnight</span>
+      </div>
+      <div className="grid sm:grid-cols-3 gap-5">
+        <QuotaBar label="Jobs" used={data.jobs.used} limit={data.jobs.limit} />
+        <QuotaBar label="Images" used={data.images.used} limit={data.images.limit} />
+        <QuotaBar
+          label="Tokens"
+          used={data.tokens.used}
+          limit={data.tokens.limit}
+          format={formatTokens}
+        />
+      </div>
+    </Card>
   );
 }

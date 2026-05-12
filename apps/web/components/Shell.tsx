@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, FlaskConical } from "lucide-react";
+import { ChevronRight, FlaskConical, Gauge } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 type Crumb = { label: string; href?: string };
@@ -65,9 +66,128 @@ function Header({ crumbs, rightSlot }: { crumbs: Crumb[]; rightSlot?: ReactNode 
             ))}
           </nav>
         )}
-        <div className="ml-auto flex items-center gap-2">{rightSlot}</div>
+        <div className="ml-auto flex items-center gap-2">
+          {rightSlot}
+          <QuotaBadge />
+        </div>
       </div>
     </header>
+  );
+}
+
+// ---------- Quota badge ----------
+
+export type QuotaResponse = {
+  quota_date: string;
+  jobs: { used: number; limit: number; remaining: number };
+  images: { used: number; limit: number; remaining: number };
+  tokens: { used: number; limit: number; remaining: number };
+};
+
+function pct(used: number, limit: number): number {
+  if (limit <= 0) return 0;
+  return Math.min(100, Math.round((used / limit) * 100));
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+export function useQuota() {
+  return useQuery<QuotaResponse>({
+    queryKey: ["workspace-quota"],
+    queryFn: async () => {
+      const res = await fetch("/api/workspaces/quota");
+      if (!res.ok) throw new Error("Failed to load quota");
+      return res.json();
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
+}
+
+function QuotaBadge() {
+  const { data, isLoading } = useQuota();
+  if (isLoading || !data) return null;
+
+  const imagesPct = pct(data.images.used, data.images.limit);
+  const tokensPct = pct(data.tokens.used, data.tokens.limit);
+  const worst = Math.max(imagesPct, tokensPct);
+
+  const tone =
+    worst >= 90
+      ? "text-red-600 dark:text-red-400 border-red-200 dark:border-red-400/30 bg-red-50/70 dark:bg-red-500/10"
+      : worst >= 70
+      ? "text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-400/30 bg-amber-50/70 dark:bg-amber-500/10"
+      : "text-[var(--muted)] border-[var(--border)] bg-[var(--surface-muted)]";
+
+  return (
+    <div
+      className={`group relative hidden sm:flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-[11px] font-medium tabular-nums ${tone}`}
+      aria-label={`Quota: ${data.images.used} of ${data.images.limit} images, ${formatTokens(data.tokens.used)} of ${formatTokens(data.tokens.limit)} tokens used today`}
+    >
+      <Gauge size={12} />
+      <span>
+        {data.images.used}/{data.images.limit} img
+      </span>
+      <span className="text-[var(--subtle)]">·</span>
+      <span>
+        {formatTokens(data.tokens.used)}/{formatTokens(data.tokens.limit)} tok
+      </span>
+      <div className="absolute right-0 top-full mt-1.5 hidden group-hover:block z-40">
+        <div className="w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg p-3 space-y-2.5 text-[12px] text-[var(--foreground)]">
+          <p className="text-[10px] uppercase tracking-wide text-[var(--subtle)] font-semibold">
+            Today&apos;s usage
+          </p>
+          <QuotaBar label="Images" used={data.images.used} limit={data.images.limit} />
+          <QuotaBar label="Jobs" used={data.jobs.used} limit={data.jobs.limit} />
+          <QuotaBar
+            label="Tokens"
+            used={data.tokens.used}
+            limit={data.tokens.limit}
+            format={formatTokens}
+          />
+          <p className="text-[10px] text-[var(--subtle)] pt-1 border-t border-[var(--border)]">
+            Resets at UTC midnight.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function QuotaBar({
+  label,
+  used,
+  limit,
+  format = (n: number) => String(n),
+}: {
+  label: string;
+  used: number;
+  limit: number;
+  format?: (n: number) => string;
+}) {
+  const p = pct(used, limit);
+  const barTone =
+    p >= 90
+      ? "bg-red-500"
+      : p >= 70
+      ? "bg-amber-500"
+      : "bg-gradient-to-r from-indigo-500 to-violet-600";
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[11px] mb-1">
+        <span className="text-[var(--muted)]">{label}</span>
+        <span className="tabular-nums text-[var(--foreground)]">
+          {format(used)} / {format(limit)}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-[var(--surface-muted)] overflow-hidden">
+        <div className={`h-full transition-all duration-500 ${barTone}`} style={{ width: `${p}%` }} />
+      </div>
+    </div>
   );
 }
 
