@@ -14,7 +14,10 @@ export async function GET() {
   const { data, error } = await supabase
     .from("projects")
     .select(
-      "id, name, status, reference_image_id, created_at, updated_at, images(id, status)"
+      // Disambiguate the embed: there are two FKs between projects and images
+      // (images.project_id and projects.reference_image_id), so we hint the
+      // column name to tell PostgREST which one to follow.
+      "id, name, status, reference_image_id, created_at, updated_at, images!project_id(id, status)"
     )
     .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false });
