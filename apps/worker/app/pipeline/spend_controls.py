@@ -199,9 +199,7 @@ async def assert_global_budget_available(pool: asyncpg.Pool) -> None:
         )
 
 
-async def assert_workspace_budget_available(
-    pool: asyncpg.Pool, workspace_id
-) -> None:
+async def assert_workspace_budget_available(pool: asyncpg.Pool, workspace_id) -> None:
     """Raise if this workspace has already burned through its daily token cap.
 
     Same soft-check semantics as the global budget — refuses new jobs, lets
@@ -213,10 +211,7 @@ async def assert_workspace_budget_available(
         return
     used = await workspace_tokens_today(pool, workspace_id)
     if used >= cap:
-        raise BudgetExceeded(
-            f"Workspace daily token budget exhausted "
-            f"({used:,} of {cap:,} used)."
-        )
+        raise BudgetExceeded(f"Workspace daily token budget exhausted ({used:,} of {cap:,} used).")
 
 
 class BudgetExceeded(Exception):

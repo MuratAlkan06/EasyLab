@@ -418,6 +418,11 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
     commitEdit,
   ]);
 
+  // TanStack Table v8 returns non-memoizable functions; React Compiler skips
+  // compiling this component as a result. Suppression is intentional — the
+  // hook is used in isolation here, its return value isn't passed to other
+  // memoized components, so the staleness risk doesn't apply.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable<RowRecord>({
     data: tableData,
     columns,

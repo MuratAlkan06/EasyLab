@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Upload, CheckCircle, X, Star, ArrowRight, ImageIcon } from "lucide-react";
 import { ReactQueryProvider } from "@/lib/query-client";
-import { Shell, Button, Card, PageTitle, Badge } from "@/components/Shell";
+import { Shell, Button, PageTitle, Badge } from "@/components/Shell";
 
 type ImageItem = {
   id: string;
