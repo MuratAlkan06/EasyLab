@@ -8,7 +8,6 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   useQuery,
   useQueryClient,
@@ -28,12 +27,11 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  ChevronRight,
-  Layers,
   Loader2,
   Pencil,
   X,
 } from "lucide-react";
+import { Shell, Button, Badge } from "@/components/Shell";
 
 type CellStatus = "ok" | "low_confidence" | "needs_review" | "failed";
 
@@ -122,7 +120,6 @@ function sortValue(cell: ApiCell | undefined): string | number {
 }
 
 export default function ReviewClient({ projectId }: { projectId: string }) {
-  const router = useRouter();
   const qc = useQueryClient();
 
   const cellsQuery = useQuery({
@@ -307,11 +304,11 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
     const fixed: ColumnDef<RowRecord>[] = [
       {
         id: "_row",
-        header: () => <span className="text-zinc-400">#</span>,
+        header: () => <span className="text-[var(--subtle)]">#</span>,
         size: 48,
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="text-zinc-400 text-xs tabular-nums">
+          <span className="text-[var(--subtle)] text-xs tabular-nums">
             {row.original._index + 1}
           </span>
         ),
@@ -328,10 +325,10 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
               src={row.original.signed_url}
               alt={row.original.filename}
               onClick={() => setZoomSrc(row.original.signed_url!)}
-              className="w-12 h-12 object-cover rounded border border-zinc-200 cursor-zoom-in hover:ring-2 hover:ring-zinc-400 transition-all"
+              className="w-12 h-12 object-cover rounded-md border border-[var(--border)] cursor-zoom-in hover:ring-2 hover:ring-[var(--primary)]/40 transition-all"
             />
           ) : (
-            <div className="w-12 h-12 rounded border border-zinc-200 bg-zinc-100" />
+            <div className="w-12 h-12 rounded-md border border-[var(--border)] bg-[var(--surface-muted)]" />
           ),
       },
       {
@@ -341,7 +338,7 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
         size: 240,
         enableSorting: true,
         cell: ({ row }) => (
-          <span className="text-sm text-zinc-700 truncate block max-w-[220px]">
+          <span className="text-sm text-[var(--foreground)] truncate block max-w-[220px]">
             {row.original.filename}
           </span>
         ),
@@ -360,10 +357,10 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
           );
           if (worst === "ok") return null;
           if (worst === "failed")
-            return <span className="text-zinc-400 text-xs">!</span>;
+            return <X size={14} className="text-red-500" strokeWidth={3} />;
           if (worst === "needs_review")
-            return <AlertTriangle size={14} className="text-orange-500" />;
-          return <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" />;
+            return <AlertTriangle size={14} className="text-amber-500" />;
+          return <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />;
         },
       },
     ];
@@ -378,11 +375,11 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
         const issues = issueCountByField.get(f.id) ?? 0;
         return (
           <div className="flex items-center gap-2">
-            <span className="text-zinc-700">{f.field_name}</span>
+            <span className="font-mono normal-case tracking-normal text-[var(--foreground)]">{f.field_name}</span>
             {issues > 0 && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700">
-                {issues} {issues === 1 ? "issue" : "issues"}
-              </span>
+              <Badge tone="red" className="!px-1.5 normal-case tracking-normal">
+                {issues}
+              </Badge>
             )}
           </div>
         );
@@ -439,92 +436,95 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
     overscan: 8,
   });
 
+  const crumbs = [
+    { label: "Project", href: `/projects/${projectId}` },
+    { label: "Review" },
+  ];
+
   // ---- Render ----
   if (cellsQuery.isLoading) {
     return (
-      <Frame projectId={projectId} router={router}>
-        <div className="flex items-center justify-center py-20 text-zinc-500 text-sm">
+      <Shell crumbs={crumbs} fullBleed>
+        <div className="flex items-center justify-center py-24 text-[var(--muted)] text-sm">
           <Loader2 size={16} className="animate-spin mr-2" />
           Loading review table…
         </div>
-      </Frame>
+      </Shell>
     );
   }
 
   if (cellsQuery.isError) {
     return (
-      <Frame projectId={projectId} router={router}>
-        <div className="text-center py-20 text-red-600 text-sm">
+      <Shell crumbs={crumbs} fullBleed>
+        <div className="text-center py-24 text-red-600 text-sm">
           {cellsQuery.error instanceof Error
             ? cellsQuery.error.message
             : "Failed to load"}
         </div>
-      </Frame>
+      </Shell>
     );
   }
 
   if (isEmpty || !cellsData) {
     return (
-      <Frame projectId={projectId} router={router}>
-        <div className="max-w-md mx-auto py-20 text-center space-y-4">
-          <p className="text-zinc-500 text-sm">
-            No completed job yet. Go back to process your images.
+      <Shell crumbs={crumbs} fullBleed>
+        <div className="max-w-md mx-auto py-24 text-center space-y-4">
+          <p className="text-[var(--muted)] text-sm">
+            No completed job yet — process your images first.
           </p>
           <Link
             href={`/projects/${projectId}`}
-            className="inline-block text-sm font-medium text-zinc-900 hover:underline"
+            className="inline-block text-sm font-medium text-[var(--primary)] hover:underline"
           >
             ← Back to project
           </Link>
         </div>
-      </Frame>
+      </Shell>
     );
   }
 
   return (
-    <Frame projectId={projectId} router={router}>
-      <div className="px-6 pt-5 pb-3 flex items-center gap-3 border-b border-zinc-200 bg-white">
-        <h2 className="text-lg font-semibold text-zinc-900">Review</h2>
-        <span className="text-xs text-zinc-400">
+    <Shell
+      crumbs={crumbs}
+      fullBleed
+      contentClassName="flex flex-col min-h-0"
+      rightSlot={
+        <Button
+          size="sm"
+          variant={issuesOnly ? "primary" : "secondary"}
+          onClick={() => setIssuesOnly((v) => !v)}
+        >
+          Issues only
+          {totalIssueCount > 0 && (
+            <Badge tone={issuesOnly ? "neutral" : "red"} className="!py-0">
+              {totalIssueCount}
+            </Badge>
+          )}
+        </Button>
+      }
+    >
+      <div className="px-6 pt-5 pb-3 flex items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)]">
+        <h2 className="text-base font-semibold text-[var(--foreground)]">Extracted values</h2>
+        <span className="text-xs text-[var(--subtle)]">
           {rows.length} {rows.length === 1 ? "image" : "images"} · {fields.length}{" "}
           {fields.length === 1 ? "field" : "fields"}
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => setIssuesOnly((v) => !v)}
-            className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors ${
-              issuesOnly
-                ? "bg-zinc-900 text-white border-zinc-900"
-                : "bg-white text-zinc-700 border-zinc-300 hover:bg-zinc-50"
-            }`}
-          >
-            Issues only
-            {totalIssueCount > 0 && (
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  issuesOnly
-                    ? "bg-red-500 text-white"
-                    : "bg-red-100 text-red-700"
-                }`}
-              >
-                {totalIssueCount}
-              </span>
-            )}
-          </button>
-        </div>
+        <span className="ml-auto text-[10px] text-[var(--subtle)]">
+          Double-click a cell to edit · <kbd className="px-1 py-0.5 rounded border border-[var(--border)] bg-[var(--surface-muted)] font-mono">Esc</kbd> to cancel
+        </span>
       </div>
 
       <div
         ref={parentRef}
-        className="flex-1 overflow-auto bg-white"
+        className="flex-1 overflow-auto bg-[var(--surface)]"
         style={{ contain: "strict" }}
       >
         {/* Flex-based layout: explicit width on every th/td keeps header and
             virtual rows in sync without colgroup (which can't go inside tr). */}
         <table style={{ borderCollapse: "collapse", width: "max-content", minWidth: "100%" }} className="text-sm">
-          <thead style={{ display: "block", position: "sticky", top: 0, zIndex: 10, background: "#fafafa" }}>
+          <thead style={{ display: "block", position: "sticky", top: 0, zIndex: 10, background: "var(--surface-muted)" }}>
             {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} style={{ display: "flex" }} className="border-b border-zinc-200">
+              <tr key={hg.id} style={{ display: "flex" }} className="border-b border-[var(--border)]">
                 {hg.headers.map((header) => {
                   const canSort = header.column.getCanSort();
                   const sortDir = header.column.getIsSorted();
@@ -532,11 +532,11 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
                     <th
                       key={header.id}
                       style={{ width: `${header.getSize()}px`, flexShrink: 0 }}
-                      className="text-left text-xs font-medium text-zinc-600 px-3 py-2.5 overflow-hidden"
+                      className="text-left text-[11px] uppercase tracking-wide font-semibold text-[var(--muted)] px-3 py-2.5 overflow-hidden"
                     >
                       <div
                         className={`flex items-center gap-1.5 ${
-                          canSort ? "cursor-pointer select-none" : ""
+                          canSort ? "cursor-pointer select-none hover:text-[var(--foreground)]" : ""
                         }`}
                         onClick={
                           canSort
@@ -552,14 +552,11 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
                             )}
                         {canSort &&
                           (sortDir === "asc" ? (
-                            <ArrowUp size={12} className="text-zinc-500" />
+                            <ArrowUp size={12} className="text-[var(--primary)]" />
                           ) : sortDir === "desc" ? (
-                            <ArrowDown size={12} className="text-zinc-500" />
+                            <ArrowDown size={12} className="text-[var(--primary)]" />
                           ) : (
-                            <ArrowUpDown
-                              size={12}
-                              className="text-zinc-300"
-                            />
+                            <ArrowUpDown size={12} className="text-[var(--subtle)]" />
                           ))}
                       </div>
                     </th>
@@ -590,7 +587,7 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
                     transform: `translateY(${vRow.start}px)`,
                     display: "flex",
                   }}
-                  className="border-b border-zinc-100 hover:bg-zinc-50/60"
+                  className="border-b border-[var(--border)] hover:bg-[var(--surface-muted)]/60"
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td
@@ -628,43 +625,7 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
-    </Frame>
-  );
-}
-
-// ---------------- Frame ----------------
-
-function Frame({
-  projectId,
-  children,
-  router,
-}: {
-  projectId: string;
-  children: React.ReactNode;
-  router: ReturnType<typeof useRouter>;
-}) {
-  return (
-    <div className="flex flex-col h-screen bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white px-8 py-3 flex items-center gap-3">
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center gap-2 text-zinc-500 hover:text-zinc-800 text-sm"
-        >
-          <Layers size={18} />
-          EasyLab
-        </button>
-        <ChevronRight size={14} className="text-zinc-300" />
-        <button
-          onClick={() => router.push(`/projects/${projectId}`)}
-          className="text-sm text-zinc-500 hover:text-zinc-800"
-        >
-          Project
-        </button>
-        <ChevronRight size={14} className="text-zinc-300" />
-        <span className="text-sm font-medium text-zinc-900">Review</span>
-      </header>
-      <main className="flex-1 flex flex-col min-h-0">{children}</main>
-    </div>
+    </Shell>
   );
 }
 
@@ -724,9 +685,9 @@ function ValueCell({
               onCancel();
             }
           }}
-          className="flex-1 min-w-0 text-sm border border-zinc-400 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-zinc-900 bg-white"
+          className="flex-1 min-w-0 text-sm border border-[var(--primary)] rounded-md px-2 py-1 focus:outline-none bg-[var(--surface)]"
         />
-        {saving && <Loader2 size={14} className="animate-spin text-zinc-400" />}
+        {saving && <Loader2 size={14} className="animate-spin text-[var(--subtle)]" />}
       </div>
     );
   }
@@ -740,15 +701,15 @@ function ValueCell({
         onKeyDown={(e) => {
           if (e.key === "Enter") { e.preventDefault(); onBeginEdit(); }
         }}
-        className="group flex items-center gap-2 cursor-text outline-none focus:ring-1 focus:ring-zinc-300 rounded px-1"
+        className="group flex items-center gap-2 cursor-text outline-none focus:ring-1 focus:ring-[var(--primary)]/40 rounded px-1"
       >
-        <span className="text-zinc-400 italic text-sm">Not found</span>
+        <span className="text-[var(--subtle)] italic text-sm">Not found</span>
         <button
           onClick={(e) => { e.stopPropagation(); onBeginEdit(); }}
-          className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 rounded hover:bg-zinc-200 transition-opacity"
+          className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 rounded hover:bg-[var(--surface-muted)] transition-opacity"
           title="Enter value manually"
         >
-          <Pencil size={11} className="text-zinc-400" />
+          <Pencil size={11} className="text-[var(--subtle)]" />
         </button>
       </div>
     );
@@ -756,16 +717,16 @@ function ValueCell({
 
   const dot =
     cell.status === "ok" ? (
-      <span className="w-2 h-2 rounded-full bg-green-500 inline-block flex-shrink-0" />
+      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block flex-shrink-0" />
     ) : cell.status === "low_confidence" ? (
-      <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block flex-shrink-0" />
+      <span className="w-2 h-2 rounded-full bg-amber-400 inline-block flex-shrink-0" />
     ) : (
-      <AlertTriangle size={12} className="text-orange-500 flex-shrink-0" />
+      <AlertTriangle size={12} className="text-amber-500 flex-shrink-0" />
     );
 
   const suffix =
     cell.status === "low_confidence" && cell.combined_confidence != null ? (
-      <span className="text-[10px] text-zinc-400 tabular-nums">
+      <span className="text-[10px] text-[var(--subtle)] tabular-nums">
         {Math.round(cell.combined_confidence * 100)}%
       </span>
     ) : null;
@@ -785,7 +746,7 @@ function ValueCell({
           onBeginEdit();
         }
       }}
-      className="group flex items-center gap-2 cursor-text outline-none focus:ring-1 focus:ring-zinc-300 rounded px-1 py-0.5"
+      className="group flex items-center gap-2 cursor-text outline-none focus:ring-1 focus:ring-[var(--primary)]/40 rounded px-1 py-0.5"
       title={
         isCorrected
           ? `Original: ${
@@ -802,33 +763,33 @@ function ValueCell({
           src={cell.crop_signed_url}
           alt=""
           onClick={(e) => { e.stopPropagation(); onZoom(cell.crop_signed_url!); }}
-          className="w-12 h-12 object-cover rounded border border-zinc-200 cursor-zoom-in transition-transform group-hover:scale-[1.6] group-hover:z-10 group-hover:shadow-lg"
+          className="w-12 h-12 object-cover rounded-md border border-[var(--border)] cursor-zoom-in transition-transform group-hover:scale-[1.6] group-hover:z-10 group-hover:shadow-lg"
         />
       )}
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
         {isCorrected ? (
-          <Pencil size={12} className="text-blue-500 flex-shrink-0" />
+          <Pencil size={12} className="text-[var(--primary)] flex-shrink-0" />
         ) : (
           dot
         )}
         <span
           className={`text-sm truncate ${
             isCorrected
-              ? "text-blue-700"
+              ? "text-[var(--primary)] font-medium"
               : cell.status === "needs_review"
-              ? "text-orange-700"
-              : "text-zinc-800"
+              ? "text-amber-700 dark:text-amber-300"
+              : "text-[var(--foreground)]"
           }`}
         >
-          {showText || <span className="text-zinc-300">—</span>}
+          {showText || <span className="text-[var(--subtle)]">—</span>}
         </span>
         {suffix}
         <button
           onClick={(e) => { e.stopPropagation(); onBeginEdit(); }}
-          className="ml-auto opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 rounded hover:bg-zinc-200 transition-opacity"
+          className="ml-auto opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 rounded hover:bg-[var(--surface-muted)] transition-opacity"
           title="Edit value"
         >
-          <Pencil size={11} className="text-zinc-400" />
+          <Pencil size={11} className="text-[var(--subtle)]" />
         </button>
       </div>
     </div>
