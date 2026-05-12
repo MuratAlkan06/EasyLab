@@ -4,9 +4,10 @@ import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, X, Clock, Loader2, AlertTriangle, Cpu, Play } from "lucide-react";
+import { Check, X, Clock, Loader2, AlertTriangle, Cpu, Play, Radio } from "lucide-react";
 import { ReactQueryProvider } from "@/lib/query-client";
 import { Shell, Button, Card, PageTitle, Badge } from "@/components/Shell";
+import { useJobRealtime } from "@/lib/use-job-realtime";
 
 type Field = { id: string; field_name: string };
 type Task = {
@@ -98,6 +99,11 @@ function ProcessPage() {
     }
   }, [project]);
 
+  // Realtime: subscribe to row changes on jobs + image_tasks for this job.
+  // When connected, the polling interval below drops to 30s as a safety net
+  // in case Realtime briefly disconnects.
+  const realtimeConnected = useJobRealtime(projectId, activeJobId);
+
   const { data: jobData } = useQuery({
     queryKey: ["job", projectId, activeJobId],
     queryFn: async () => {
@@ -109,7 +115,9 @@ function ProcessPage() {
     refetchInterval: (query) => {
       const status = query.state.data?.job?.status;
       if (status === "succeeded" || status === "failed" || status === "cancelled") return false;
-      return 1500;
+      // Realtime drives most updates — long fallback poll covers reconnect gaps.
+      // Without Realtime configured, fall back to the original 1.5s cadence.
+      return realtimeConnected ? 30_000 : 1500;
     },
   });
 
@@ -209,7 +217,24 @@ function ProcessPage() {
             ? `Job ${job.id.slice(0, 8)} — ${job.progress_done}/${job.progress_total} images`
             : "Run AI extraction across every uploaded image."
         }
-        rightSlot={job ? <Badge tone={jobStatusTone[job.status]}>{job.status}</Badge> : undefined}
+        rightSlot={
+          job ? (
+            <div className="flex items-center gap-2">
+              {realtimeConnected &&
+                job.status !== "succeeded" &&
+                job.status !== "failed" &&
+                job.status !== "cancelled" && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                    title="Receiving live updates via Supabase Realtime"
+                  >
+                    <Radio size={10} className="animate-pulse" /> Live
+                  </span>
+                )}
+              <Badge tone={jobStatusTone[job.status]}>{job.status}</Badge>
+            </div>
+          ) : undefined
+        }
       />
 
       {showModal && (
