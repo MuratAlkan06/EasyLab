@@ -16,6 +16,14 @@ const ConfirmSchema = z.object({
   height_px: z.number().int().min(1).optional(),
 });
 
+const ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/tiff",
+]);
+const MAX_BYTES = 52_428_800; // 50 MB — must match upload-urls validation
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; imageId: string }> }
@@ -24,7 +32,6 @@ export async function POST(
   const workspaceId = await getWorkspaceId();
   if (!workspaceId) return notFound("No workspace");
 
-  // Verify project belongs to workspace
   const { data: project, error: projErr } = await supabase
     .from("projects")
     .select("id")
@@ -34,7 +41,6 @@ export async function POST(
   if (projErr) return internalError(projErr.message);
   if (!project) return notFound("Project not found");
 
-  // Optional body
   let body: unknown = {};
   const text = await req.text();
   if (text.length > 0) {
@@ -49,7 +55,6 @@ export async function POST(
     return validationError(parsed.error.issues[0].message);
   }
 
-  // Fetch image and verify it is in pending_upload
   const { data: image, error: imgErr } = await supabase
     .from("images")
     .select("id, status, storage_path")
@@ -62,7 +67,6 @@ export async function POST(
     return conflict(`Image is in status '${image.status}', not 'pending_upload'`);
   }
 
-  // Verify the object was actually uploaded
   const storagePath = image.storage_path as string;
   const { data: meta, error: metaErr } = await supabase.storage
     .from("easylab")
@@ -78,9 +82,42 @@ export async function POST(
     );
   }
 
-  const updates: Record<string, unknown> = { status: "uploaded" };
-  if (parsed.data.size_bytes !== undefined)
-    updates.size_bytes = parsed.data.size_bytes;
+  // Trust Supabase Storage's mime + size, not what the client body claims.
+  const stored = meta[0] as {
+    metadata?: { mimetype?: string; size?: number } | null;
+  };
+  const storedMime = stored.metadata?.mimetype;
+  const storedSize = stored.metadata?.size;
+
+  if (!storedMime || !ALLOWED_MIME.has(storedMime)) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      `Unsupported image type${storedMime ? ` '${storedMime}'` : ""}. Allowed: JPEG, PNG, WebP, TIFF.`
+    );
+  }
+
+  if (typeof storedSize !== "number" || storedSize < 1) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      "Uploaded file is empty or unreadable"
+    );
+  }
+
+  if (storedSize > MAX_BYTES) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      `File exceeds maximum size of ${Math.floor(MAX_BYTES / 1024 / 1024)} MB`
+    );
+  }
+
+  const updates: Record<string, unknown> = {
+    status: "uploaded",
+    size_bytes: storedSize,
+    mime_type: storedMime,
+  };
   if (parsed.data.width_px !== undefined)
     updates.width_px = parsed.data.width_px;
   if (parsed.data.height_px !== undefined)
