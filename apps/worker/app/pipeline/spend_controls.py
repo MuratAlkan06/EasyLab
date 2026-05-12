@@ -128,7 +128,7 @@ async def record_token_usage(
     """
     if total_tokens <= 0:
         return
-    today = date.today().isoformat()
+    today = date.today()
     try:
         await pool.execute(
             """
@@ -156,7 +156,7 @@ async def record_token_usage(
 
 async def global_tokens_today(pool: asyncpg.Pool) -> int:
     """Sum tokens_today across all workspaces whose quota_date is today."""
-    today = date.today().isoformat()
+    today = date.today()
     row = await pool.fetchrow(
         """
         SELECT COALESCE(SUM(tokens_today), 0)::bigint AS total
