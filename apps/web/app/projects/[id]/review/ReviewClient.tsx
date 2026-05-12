@@ -27,6 +27,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Download,
   Loader2,
   Pencil,
   X,
@@ -489,18 +490,26 @@ export default function ReviewClient({ projectId }: { projectId: string }) {
       fullBleed
       contentClassName="flex flex-col min-h-0"
       rightSlot={
-        <Button
-          size="sm"
-          variant={issuesOnly ? "primary" : "secondary"}
-          onClick={() => setIssuesOnly((v) => !v)}
-        >
-          Issues only
-          {totalIssueCount > 0 && (
-            <Badge tone={issuesOnly ? "neutral" : "red"} className="!py-0">
-              {totalIssueCount}
-            </Badge>
-          )}
-        </Button>
+        <>
+          <Button
+            size="sm"
+            variant={issuesOnly ? "primary" : "secondary"}
+            onClick={() => setIssuesOnly((v) => !v)}
+          >
+            Issues only
+            {totalIssueCount > 0 && (
+              <Badge tone={issuesOnly ? "neutral" : "red"} className="!py-0">
+                {totalIssueCount}
+              </Badge>
+            )}
+          </Button>
+          <Link
+            href={`/projects/${projectId}/export`}
+            className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border-strong)] hover:bg-[var(--surface-muted)] shadow-sm transition-colors"
+          >
+            <Download size={13} /> Export CSV
+          </Link>
+        </>
       }
     >
       <div className="px-6 pt-5 pb-3 flex items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)]">
