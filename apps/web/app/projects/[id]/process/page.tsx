@@ -180,7 +180,7 @@ function ProcessPage() {
   const pendingCount = tasks.filter((t) => t.status === "pending").length;
   const progressPct =
     (job?.progress_total ?? 0) > 0
-      ? Math.round(((job?.progress_done ?? 0) / (job?.progress_total ?? 1)) * 100)
+      ? Math.min(100, Math.round(((job?.progress_done ?? 0) / (job?.progress_total ?? 1)) * 100))
       : 0;
 
   const jobStatusTone: Record<Job["status"], "blue" | "amber" | "green" | "red" | "neutral"> = {
@@ -295,7 +295,9 @@ function ProcessPage() {
                     <span className="text-sm text-[var(--foreground)] truncate flex-1 min-w-0">
                       {task.filename}
                     </span>
-                    <Badge tone={TASK_STATUS_TONE[task.status]}>{task.status}</Badge>
+                    <Badge tone={TASK_STATUS_TONE[task.status]}>
+                      {task.status.replace("_", " ")}
+                    </Badge>
                   </li>
                 ))}
               </ul>

@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model_pro: str = "gemini-2.5-pro"
     gemini_model_flash: str = "gemini-2.5-flash"
+    # Stage B (region detection) — separate alias so the deployment can swap
+    # detection independently from template generation if needed.
+    gemini_detection_model: str = "gemini-2.5-pro"
+    # Stage C (value extraction) — Flash by default for cost/latency. Same
+    # alias rationale as detection: deployments can swap independently.
+    gemini_extraction_model: str = "gemini-2.5-flash"
 
     internal_shared_secret: str
     fastapi_port: int = 8000
@@ -22,6 +28,10 @@ class Settings(BaseSettings):
     gemini_breaker_threshold: int = 5
     gemini_breaker_cooldown_seconds: int = 300
     global_daily_token_budget: int = 50_000_000
+
+    # PaddleOCR runs alongside Gemini Flash in Stage C. Set to false to skip
+    # loading the paddle stack at runtime (e.g. CI, local dev without OCR).
+    ocr_enabled: bool = True
 
     log_level: str = "INFO"
 
