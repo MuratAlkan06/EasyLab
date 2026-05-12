@@ -1,7 +1,8 @@
 "use client";
-import { useRouter, useParams } from "next/navigation";
-import { Layers, ChevronRight } from "lucide-react";
+import { useParams } from "next/navigation";
+import { Table2 } from "lucide-react";
 import { ReactQueryProvider } from "@/lib/query-client";
+import { Shell, Card, PageTitle } from "@/components/Shell";
 
 export default function ReviewPageWrapper() {
   return (
@@ -13,21 +14,23 @@ export default function ReviewPageWrapper() {
 
 function ReviewPage() {
   const { id: projectId } = useParams<{ id: string }>();
-  const router = useRouter();
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white px-8 py-4 flex items-center gap-3">
-        <button onClick={() => router.push("/")} className="flex items-center gap-2 text-zinc-500 hover:text-zinc-800 text-sm">
-          <Layers size={18} />EasyLab
-        </button>
-        <ChevronRight size={14} className="text-zinc-300" />
-        <button onClick={() => router.push(`/projects/${projectId}`)} className="text-sm text-zinc-500 hover:text-zinc-800">Project</button>
-        <ChevronRight size={14} className="text-zinc-300" />
-        <span className="text-sm font-medium text-zinc-900">Review</span>
-      </header>
-      <main className="max-w-4xl mx-auto px-8 py-16 text-center">
-        <p className="text-zinc-400 text-sm">Review table — coming in Phase 3.</p>
-      </main>
-    </div>
+    <Shell
+      crumbs={[
+        { label: "Project", href: `/projects/${projectId}` },
+        { label: "Review" },
+      ]}
+    >
+      <PageTitle title="Review" description="Inspect AI-extracted values and fix any mistakes." />
+      <Card className="p-14 flex flex-col items-center text-center gap-4">
+        <div className="grid place-items-center w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 text-indigo-600 dark:text-indigo-300">
+          <Table2 size={22} />
+        </div>
+        <p className="text-sm text-[var(--muted)] max-w-sm">
+          The review table lives on a different branch (Phase 4–5). It hasn&apos;t been merged into
+          this branch yet — see the chat for instructions.
+        </p>
+      </Card>
+    </Shell>
   );
 }

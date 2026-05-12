@@ -1,7 +1,8 @@
 "use client";
-import { useRouter, useParams } from "next/navigation";
-import { Layers, ChevronRight } from "lucide-react";
+import { useParams } from "next/navigation";
+import { Download } from "lucide-react";
 import { ReactQueryProvider } from "@/lib/query-client";
+import { Shell, Card, PageTitle } from "@/components/Shell";
 
 export default function ExportPageWrapper() {
   return (
@@ -13,21 +14,23 @@ export default function ExportPageWrapper() {
 
 function ExportPage() {
   const { id: projectId } = useParams<{ id: string }>();
-  const router = useRouter();
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white px-8 py-4 flex items-center gap-3">
-        <button onClick={() => router.push("/")} className="flex items-center gap-2 text-zinc-500 hover:text-zinc-800 text-sm">
-          <Layers size={18} />EasyLab
-        </button>
-        <ChevronRight size={14} className="text-zinc-300" />
-        <button onClick={() => router.push(`/projects/${projectId}`)} className="text-sm text-zinc-500 hover:text-zinc-800">Project</button>
-        <ChevronRight size={14} className="text-zinc-300" />
-        <span className="text-sm font-medium text-zinc-900">Export</span>
-      </header>
-      <main className="max-w-4xl mx-auto px-8 py-16 text-center">
-        <p className="text-zinc-400 text-sm">CSV export — coming in Phase 5.</p>
-      </main>
-    </div>
+    <Shell
+      crumbs={[
+        { label: "Project", href: `/projects/${projectId}` },
+        { label: "Export" },
+      ]}
+    >
+      <PageTitle title="Export" description="Download your reviewed data as CSV." />
+      <Card className="p-14 flex flex-col items-center text-center gap-4">
+        <div className="grid place-items-center w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 text-indigo-600 dark:text-indigo-300">
+          <Download size={22} />
+        </div>
+        <p className="text-sm text-[var(--muted)] max-w-sm">
+          CSV export ships with the review table on a different branch. Not yet merged into this
+          branch.
+        </p>
+      </Card>
+    </Shell>
   );
 }

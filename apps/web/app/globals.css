@@ -1,26 +1,88 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-soft: var(--primary-soft);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root {
+  --background: #f7f8fa;
+  --foreground: #0b1220;
+  --surface: #ffffff;
+  --surface-muted: #f3f4f8;
+  --border: #e5e7ee;
+  --border-strong: #d6d9e2;
+  --muted: #5b6478;
+  --subtle: #98a0b3;
+  --primary: #4f46e5;
+  --primary-strong: #4338ca;
+  --primary-soft: #eef0ff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #07090f;
+    --foreground: #e8ebf2;
+    --surface: #0f1320;
+    --surface-muted: #131829;
+    --border: #1f2536;
+    --border-strong: #2a3149;
+    --muted: #98a0b3;
+    --subtle: #6b7388;
+    --primary: #818cf8;
+    --primary-strong: #6366f1;
+    --primary-soft: #1a1f3a;
   }
 }
 
-body {
+html, body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+}
+
+body {
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, color-mix(in oklab, var(--primary) 12%, transparent), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, color-mix(in oklab, var(--primary) 8%, transparent), transparent 60%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--primary) 30%, transparent);
+}
+
+/* Subtle scrollbar */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--border-strong) 70%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--border-strong) 100%, transparent);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* Focus ring */
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--primary) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 8px;
 }

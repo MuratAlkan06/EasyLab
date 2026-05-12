@@ -4,8 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Trash2, ChevronRight, Layers } from "lucide-react";
+import { Plus, Trash2, ArrowRight, FlaskConical, ImageIcon, X } from "lucide-react";
 import { ReactQueryProvider } from "@/lib/query-client";
+import { Shell, Button, Card, Badge, PageTitle } from "@/components/Shell";
 
 type Project = {
   id: string;
@@ -24,11 +25,11 @@ const STATUS_LABEL: Record<Project["status"], string> = {
   done: "Done",
 };
 
-const STATUS_COLOR: Record<Project["status"], string> = {
-  draft: "bg-zinc-100 text-zinc-500",
-  annotated: "bg-blue-100 text-blue-600",
-  processing: "bg-yellow-100 text-yellow-700",
-  done: "bg-green-100 text-green-700",
+const STATUS_TONE: Record<Project["status"], "neutral" | "blue" | "amber" | "green"> = {
+  draft: "neutral",
+  annotated: "blue",
+  processing: "amber",
+  done: "green",
 };
 
 export default function RootPage() {
@@ -103,134 +104,136 @@ function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white px-8 py-4 flex items-center gap-3">
-        <Layers className="text-zinc-700" size={22} />
-        <h1 className="text-lg font-semibold text-zinc-900">EasyLab</h1>
-      </header>
+    <Shell>
+      <PageTitle
+        title="Projects"
+        description="Upload similar lab images, label fields once, and let AI extract the same data across the whole batch."
+        rightSlot={
+          !creating ? (
+            <Button onClick={() => setCreating(true)}>
+              <Plus size={16} strokeWidth={2.4} /> New project
+            </Button>
+          ) : null
+        }
+      />
 
-      <main className="max-w-4xl mx-auto px-8 py-10 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-zinc-900">Projects</h2>
-            <p className="text-sm text-zinc-500 mt-0.5">
-              Upload lab images, annotate fields, and extract data with AI.
-            </p>
-          </div>
-          {!creating && (
-            <button
-              onClick={() => setCreating(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-sm rounded-lg hover:bg-zinc-700 transition-colors"
-            >
-              <Plus size={16} />
-              New Project
-            </button>
-          )}
-        </div>
-
-        {creating && (
-          <form
-            onSubmit={handleCreateSubmit}
-            className="bg-white border border-zinc-200 rounded-lg p-4 flex gap-2"
-          >
+      {creating && (
+        <Card className="mb-5 p-4">
+          <form onSubmit={handleCreateSubmit} className="flex flex-wrap gap-2 items-center">
             <input
               autoFocus
-              className="flex-1 border border-zinc-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400"
-              placeholder="Project name"
+              className="flex-1 min-w-[220px] h-10 px-3 rounded-lg bg-[var(--surface-muted)] border border-[var(--border-strong)] text-sm placeholder:text-[var(--subtle)] focus:outline-none focus:border-[var(--primary)] focus:bg-[var(--surface)] transition-colors"
+              placeholder="Project name (e.g. Multimeter readings — Lab 3)"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               maxLength={120}
             />
-            <button
-              type="submit"
-              disabled={!newName.trim() || createProject.isPending}
-              className="px-4 py-2 bg-zinc-900 text-white text-sm rounded-md hover:bg-zinc-700 disabled:opacity-50 transition-colors"
-            >
-              {createProject.isPending ? "Creating…" : "Create"}
-            </button>
-            <button
+            <Button type="submit" disabled={!newName.trim()} loading={createProject.isPending}>
+              Create
+            </Button>
+            <Button
               type="button"
-              onClick={() => { setCreating(false); setNewName(""); }}
-              className="px-3 py-2 text-sm text-zinc-500 hover:text-zinc-800"
+              variant="ghost"
+              onClick={() => {
+                setCreating(false);
+                setNewName("");
+              }}
             >
               Cancel
-            </button>
+            </Button>
           </form>
-        )}
+        </Card>
+      )}
 
-        {isLoading ? (
-          <div className="bg-white border border-zinc-200 rounded-lg p-8 text-center text-sm text-zinc-400">
-            Loading…
+      {isLoading ? (
+        <Card className="p-10 text-center text-sm text-[var(--subtle)]">Loading projects…</Card>
+      ) : projects.length === 0 ? (
+        <Card className="p-14 flex flex-col items-center text-center gap-5">
+          <div className="grid place-items-center w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 text-indigo-600 dark:text-indigo-300">
+            <FlaskConical size={26} />
           </div>
-        ) : projects.length === 0 ? (
-          <div className="bg-white border border-zinc-200 rounded-lg p-12 flex flex-col items-center gap-4 text-center">
-            <Layers size={40} className="text-zinc-300" />
-            <div>
-              <p className="font-medium text-zinc-700">No projects yet</p>
-              <p className="text-sm text-zinc-400 mt-1">
-                Create a project to start extracting data from your lab images.
-              </p>
-            </div>
-            <button
-              onClick={() => setCreating(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-sm rounded-lg hover:bg-zinc-700 transition-colors"
-            >
-              <Plus size={16} />
-              New Project
-            </button>
+          <div className="space-y-1">
+            <p className="font-semibold text-[var(--foreground)]">Start your first project</p>
+            <p className="text-sm text-[var(--muted)] max-w-sm">
+              Upload a batch of similar images, label one as a reference, and EasyLab will extract the
+              same fields from the rest.
+            </p>
           </div>
-        ) : (
-          <div className="bg-white border border-zinc-200 rounded-lg divide-y divide-zinc-100">
+          {!creating && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus size={16} strokeWidth={2.4} /> New project
+            </Button>
+          )}
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <ul className="divide-y divide-[var(--border)]">
             {projects.map((p) => (
-              <div key={p.id} className="flex items-center px-5 py-4 hover:bg-zinc-50 transition-colors">
+              <li
+                key={p.id}
+                className="group flex items-center px-5 py-4 hover:bg-[var(--surface-muted)] transition-colors"
+              >
                 <button
-                  className="flex-1 text-left flex items-center gap-4 min-w-0"
+                  className="flex-1 text-left flex items-center gap-3 min-w-0"
                   onClick={() => router.push(`/projects/${p.id}`)}
                 >
+                  <div className="grid place-items-center w-9 h-9 rounded-lg bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--muted)] group-hover:text-[var(--primary)] group-hover:border-[var(--primary-soft)] transition-colors flex-shrink-0">
+                    <ImageIcon size={16} />
+                  </div>
                   <div className="min-w-0">
-                    <p className="font-medium text-zinc-900 truncate">{p.name}</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      {p.image_count} image{p.image_count !== 1 ? "s" : ""}
-                      {" · "}
-                      {new Date(p.updated_at).toLocaleDateString()}
+                    <p className="font-medium text-[var(--foreground)] truncate">{p.name}</p>
+                    <p className="text-xs text-[var(--subtle)] mt-0.5">
+                      {p.image_count} image{p.image_count !== 1 ? "s" : ""} · updated{" "}
+                      {new Date(p.updated_at).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      })}
                     </p>
                   </div>
                 </button>
                 <div className="flex items-center gap-3 ml-4">
-                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_COLOR[p.status]}`}>
-                    {STATUS_LABEL[p.status]}
-                  </span>
+                  <Badge tone={STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>
                   {deleteConfirm === p.id ? (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-zinc-500">Delete?</span>
-                      <button
+                      <span className="text-xs text-[var(--muted)]">Delete?</span>
+                      <Button
+                        size="sm"
+                        variant="danger"
                         onClick={() => deleteProject.mutate(p.id)}
-                        className="text-xs text-red-600 hover:text-red-800 font-medium"
+                        loading={deleteProject.isPending}
                       >
-                        Yes
-                      </button>
+                        Delete
+                      </Button>
                       <button
                         onClick={() => setDeleteConfirm(null)}
-                        className="text-xs text-zinc-400 hover:text-zinc-600"
+                        className="p-1.5 text-[var(--subtle)] hover:text-[var(--foreground)]"
+                        aria-label="Cancel"
                       >
-                        No
+                        <X size={14} />
                       </button>
                     </div>
                   ) : (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(p.id); }}
-                      className="p-1.5 text-zinc-300 hover:text-red-400 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirm(p.id);
+                      }}
+                      className="p-1.5 rounded-md text-[var(--subtle)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100"
+                      aria-label="Delete project"
                     >
                       <Trash2 size={15} />
                     </button>
                   )}
-                  <ChevronRight size={16} className="text-zinc-300" />
+                  <ArrowRight
+                    size={16}
+                    className="text-[var(--subtle)] group-hover:text-[var(--primary)] group-hover:translate-x-0.5 transition-all"
+                  />
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
-        )}
-      </main>
-    </div>
+          </ul>
+        </Card>
+      )}
+    </Shell>
   );
 }
