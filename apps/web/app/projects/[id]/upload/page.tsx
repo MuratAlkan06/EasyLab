@@ -35,6 +35,7 @@ function UploadPage() {
   const [images, setImages] = useState<ImageItem[]>([]);
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [settingRef, setSettingRef] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -188,6 +189,26 @@ function UploadPage() {
     noClick: images.length > 0,
   });
 
+  async function handleRemove(imageId: string) {
+    if (removingId) return;
+    setRemovingId(imageId);
+    try {
+      const res = await fetch(`/api/images/${imageId}`, { method: "DELETE" });
+      // 404 is fine — the row may have been cleaned up already.
+      if (!res.ok && res.status !== 404) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error?.message ?? `Failed to remove (${res.status})`);
+      }
+      setImages((prev) => prev.filter((i) => i.id !== imageId));
+      if (referenceId === imageId) setReferenceId(null);
+      qc.invalidateQueries({ queryKey: ["images", projectId] });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove image");
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
   async function handleSetReference(imageId: string) {
     if (settingRef) return;
     setSettingRef(true);
@@ -271,58 +292,96 @@ function UploadPage() {
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
             {images.map((img) => {
               const isUploaded = img.status === "uploaded";
+              const isFailed = img.status === "failed";
+              const isRemoving = removingId === img.id;
               return (
-                <button
+                <div
                   key={img.id}
-                  type="button"
-                  onClick={() => isUploaded && handleSetReference(img.id)}
-                  disabled={!isUploaded || settingRef}
                   className={[
                     "group relative rounded-xl overflow-hidden border-2 transition-all bg-[var(--surface-muted)]",
                     isUploaded
                       ? img.is_reference
-                        ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/30 cursor-default"
-                        : "border-transparent cursor-pointer hover:border-[var(--primary)]/60 hover:shadow-md hover:shadow-indigo-500/10 hover:-translate-y-0.5"
-                      : "border-transparent cursor-default",
+                        ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/30"
+                        : "border-transparent hover:border-[var(--primary)]/60 hover:shadow-md hover:shadow-indigo-500/10 hover:-translate-y-0.5"
+                      : isFailed
+                      ? "border-red-500/40"
+                      : "border-transparent",
                   ].join(" ")}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={img.localUrl ?? img.signed_url ?? ""}
-                    alt={img.filename}
-                    className="w-full aspect-square object-cover"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => isUploaded && !img.is_reference && handleSetReference(img.id)}
+                    disabled={!isUploaded || img.is_reference || settingRef}
+                    aria-label={
+                      isUploaded
+                        ? img.is_reference
+                          ? `${img.filename} (reference)`
+                          : `Set ${img.filename} as reference`
+                        : img.filename
+                    }
+                    className="block w-full text-left disabled:cursor-default cursor-pointer"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={img.localUrl ?? img.signed_url ?? ""}
+                      alt={img.filename}
+                      className="w-full aspect-square object-cover"
+                    />
 
-                  {img.uploading && (
-                    <div className="absolute inset-0 bg-black/45 grid place-items-center">
-                      <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  )}
+                    {img.uploading && (
+                      <div className="absolute inset-0 bg-black/45 grid place-items-center">
+                        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
 
-                  {img.status === "failed" && (
-                    <div className="absolute inset-0 bg-red-900/60 grid place-items-center">
-                      <X size={20} className="text-white" />
-                    </div>
-                  )}
+                    {isFailed && (
+                      <div className="absolute inset-0 bg-red-900/60 grid place-items-center">
+                        <X size={20} className="text-white" />
+                      </div>
+                    )}
 
-                  {img.is_reference && (
-                    <div className="absolute top-1.5 left-1.5 bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
-                      <Star size={9} strokeWidth={3} fill="currentColor" /> REF
-                    </div>
-                  )}
+                    {img.is_reference && (
+                      <div className="absolute top-1.5 left-1.5 bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
+                        <Star size={9} strokeWidth={3} fill="currentColor" /> REF
+                      </div>
+                    )}
 
-                  {isUploaded && !img.is_reference && (
-                    <div className="absolute bottom-1.5 right-1.5">
-                      <CheckCircle size={14} className="text-emerald-400 drop-shadow" />
-                    </div>
-                  )}
+                    {isUploaded && !img.is_reference && (
+                      <div className="absolute bottom-1.5 right-1.5">
+                        <CheckCircle size={14} className="text-emerald-400 drop-shadow" />
+                      </div>
+                    )}
 
-                  {!isUploaded && !img.uploading && img.status !== "failed" && (
-                    <div className="absolute inset-0 bg-[var(--surface-muted)] grid place-items-center text-[var(--subtle)]">
-                      <ImageIcon size={20} />
-                    </div>
-                  )}
-                </button>
+                    {!isUploaded && !img.uploading && !isFailed && (
+                      <div className="absolute inset-0 bg-[var(--surface-muted)] grid place-items-center text-[var(--subtle)]">
+                        <ImageIcon size={20} />
+                      </div>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemove(img.id);
+                    }}
+                    disabled={isRemoving || img.uploading}
+                    aria-label={`Remove ${img.filename}`}
+                    title="Remove"
+                    className={[
+                      "absolute top-1.5 right-1.5 grid place-items-center w-6 h-6 rounded-full text-white shadow transition-opacity disabled:opacity-50 disabled:cursor-wait",
+                      isFailed
+                        ? "bg-red-600/90 hover:bg-red-700 opacity-100"
+                        : "bg-black/55 hover:bg-black/80 opacity-0 group-hover:opacity-100 focus:opacity-100",
+                    ].join(" ")}
+                  >
+                    {isRemoving ? (
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <X size={12} strokeWidth={3} />
+                    )}
+                  </button>
+                </div>
               );
             })}
           </div>
