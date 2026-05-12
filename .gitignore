@@ -1,3 +1,6 @@
+# Reconstruct plugin scratch dir
+.reconstruct/
+
 # Dependencies
 node_modules/
 .pnp
