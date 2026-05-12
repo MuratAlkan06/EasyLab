@@ -53,14 +53,23 @@ function UploadPage() {
   });
 
   useEffect(() => {
-    if (existingImages?.images) {
-      const uploaded = existingImages.images.filter((i) => i.status !== "pending_upload");
-      startTransition(() => {
-        setImages(uploaded);
-        const ref = uploaded.find((i) => i.is_reference);
-        if (ref) setReferenceId(ref.id);
+    if (!existingImages?.images) return;
+    const fromServer = existingImages.images.filter((i) => i.status !== "pending_upload");
+    startTransition(() => {
+      setImages((prev) => {
+        // Preserve any locally tracked failed/uploading rows that the server
+        // doesn't know about (failed confirms stay as 'pending_upload' on the
+        // server). Otherwise users would lose the visible 'failed' marker on
+        // the next refetch and not know why the upload didn't take.
+        const serverIds = new Set(fromServer.map((i) => i.id));
+        const localOnly = prev.filter(
+          (i) => !serverIds.has(i.id) && (i.status === "failed" || i.uploading),
+        );
+        return [...fromServer, ...localOnly];
       });
-    }
+      const ref = fromServer.find((i) => i.is_reference);
+      if (ref) setReferenceId(ref.id);
+    });
   }, [existingImages]);
 
   const uploadFiles = useCallback(
@@ -116,17 +125,29 @@ function UploadPage() {
       await Promise.all(
         urlData.uploads.map(async (upload, i) => {
           try {
-            await fetch(upload.upload_url, {
+            const putRes = await fetch(upload.upload_url, {
               method: "PUT",
               headers: { "Content-Type": validFiles[i].type },
               body: validFiles[i],
             });
+            if (!putRes.ok) {
+              throw new Error(`Storage upload failed (${putRes.status})`);
+            }
 
-            await fetch(`/api/projects/${projectId}/images/${upload.image_id}/confirm`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ size_bytes: validFiles[i].size }),
-            });
+            const confirmRes = await fetch(
+              `/api/projects/${projectId}/images/${upload.image_id}/confirm`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ size_bytes: validFiles[i].size }),
+              },
+            );
+            if (!confirmRes.ok) {
+              const body = await confirmRes.json().catch(() => ({}));
+              throw new Error(
+                body?.error?.message ?? `Validation failed (${confirmRes.status})`,
+              );
+            }
 
             if (!mountedRef.current) return;
             setImages((prev) =>
@@ -134,14 +155,15 @@ function UploadPage() {
                 img.id === upload.image_id ? { ...img, status: "uploaded", uploading: false } : img,
               ),
             );
-          } catch {
+          } catch (e: unknown) {
             if (!mountedRef.current) return;
             setImages((prev) =>
               prev.map((img) =>
                 img.id === upload.image_id ? { ...img, uploading: false, status: "failed" } : img,
               ),
             );
-            toast.error(`Failed to upload ${upload.filename}`);
+            const reason = e instanceof Error ? e.message : "Upload failed";
+            toast.error(`${upload.filename}: ${reason}`);
           }
         }),
       );
@@ -153,6 +175,14 @@ function UploadPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: uploadFiles,
+    onDropRejected: (rejections) => {
+      // react-dropzone's accept matcher dropped these silently before. Surface
+      // every reason so the user knows why a file didn't upload.
+      for (const r of rejections) {
+        const reason = r.errors[0]?.message ?? "rejected";
+        toast.error(`${r.file.name}: ${reason}`);
+      }
+    },
     accept: { "image/jpeg": [], "image/png": [] },
     multiple: true,
     noClick: images.length > 0,
