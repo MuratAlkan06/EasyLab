@@ -3,7 +3,13 @@
 [![CI](https://github.com/MuratAlkan06/EasyLab/actions/workflows/ci.yml/badge.svg)](https://github.com/MuratAlkan06/EasyLab/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Upload a batch of similar lab images, label regions on one reference image, and let AI extract the same fields across all of them into a review table and CSV export.
+## What is EasyLab?
+
+EasyLab turns batches of repetitive lab photos — meter readings, instrument displays, test strips, sample labels — into structured, exportable data without writing a script for every device.
+
+Manually transcribing values off dozens of near-identical images is slow and error-prone, but every batch looks slightly different, so off-the-shelf OCR misses fields or grabs the wrong ones. EasyLab splits the work: **you** show it what to look for on one reference image by drawing boxes around the fields that matter; **the AI** learns what each region represents and then finds and reads the same fields on every other image in the batch. You review the results in a table (with crop thumbnails next to each value so you can trust what was extracted), fix anything that looks off, and export to CSV.
+
+**Who it's for:** lab technicians, researchers, QA teams, and anyone who needs to pull the same handful of values off a stack of similar images and would rather not type them in by hand.
 
 > **Core idea:** Label one image once → AI learns what each region means → AI finds and extracts the same fields across the rest.
 
@@ -111,12 +117,6 @@ All phases complete in [`v0.6.0`](https://github.com/MuratAlkan06/EasyLab/releas
 - [x] **Phase 4** — Crops + confidence + `needs_review` flags
 - [x] **Phase 5** — CSV export + `cell_overrides` survive re-runs
 - [x] **Phase 6** — Polish: circuit breaker, global token budget, per-workspace daily image quota, server-trusted size + mime, byte-decoded width/height, per-workspace token cap, quota UI, Supabase Realtime, vitest harness
-
----
-
-## Known issues
-
-- **Stage B detection accuracy** — Gemini sometimes boxes static device labels (printed "AMP", "VOLT") instead of the live LCD display next to them. A visual-crop matching attempt is parked in `git stash`; see `project_phase3_detection_status.md` for the full diagnosis and fallback options.
 
 ---
 
