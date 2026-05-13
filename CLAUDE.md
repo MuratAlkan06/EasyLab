@@ -8,16 +8,18 @@ Core concept: "Label one image once → AI learns what each region means → AI 
 
 ## Current Phase
 
-Phases 1–5 complete. Phase 6 in progress.
+**v0.6.0 shipped 2026-05-13.** All planned phases complete; project is in maintenance + polish mode.
 
 1. ✅ Monorepo scaffold + docker-compose + Supabase migrations + fake job smoke test (no AI)
 2. ✅ Template generation — Gemini 2.5 Pro enriches annotations with semantic_description
 3. ✅ Full detection + extraction — review table populates
 4. ✅ Crops + confidence + needs_review — crop images shown in review table
 5. ✅ CSV export + cell_overrides survive re-runs
-6. ⏳ Polish — circuit breaker ✅, global token budget ✅, per-workspace daily image quota ✅, server-trusted size + mime ✅; Supabase Realtime ❌, per-workspace token cap ❌, quota UI ❌, byte-decoded width/height ❌
+6. ✅ Polish — circuit breaker, global token budget, per-workspace daily image quota, server-trusted size + mime, byte-decoded width/height, per-workspace token cap, quota UI, Supabase Realtime, vitest harness
 
-Known parked issue: **Stage B detection accuracy** — Gemini boxes static device labels (printed "AMP", "VOLT") instead of live LCD displays. Visual-crop matching attempt is in `git stash`. See `project_phase3_detection_status.md` for the full diagnosis and fallback options.
+## Known limitations
+
+**Stage B detection accuracy** — Gemini boxes static device labels (printed "AMP", "VOLT") instead of live LCD displays. Visual-crop matching attempt is in `git stash`. See `project_phase3_detection_status.md` for the full diagnosis and three fallback options (per-field calls / Flash for detection / traditional template matching). Worth a Phase 7 design pass.
 
 ---
 
