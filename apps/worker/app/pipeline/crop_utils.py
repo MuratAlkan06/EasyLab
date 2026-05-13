@@ -78,3 +78,34 @@ def crop_and_encode(
     cropped = img.crop(crop_rect)
     resized = resize_longest_edge(cropped, max_longest_edge)
     return encode_jpeg(resized, jpeg_quality)
+
+
+def box_iou(a: dict, b: dict) -> float:
+    """Intersection-over-Union of two normalized 0..1 boxes.
+
+    Boxes are ``{"x", "y", "width", "height"}``. Returns 0.0 when either box
+    has zero area or the boxes are disjoint, 1.0 when they're identical.
+    Used for Stage B diagnostics to detect "Gemini is confident about the
+    wrong region" (high box_confidence + low IoU vs reference).
+    """
+    ax1, ay1 = a["x"], a["y"]
+    ax2, ay2 = ax1 + a["width"], ay1 + a["height"]
+    bx1, by1 = b["x"], b["y"]
+    bx2, by2 = bx1 + b["width"], by1 + b["height"]
+
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    iw = max(0.0, ix2 - ix1)
+    ih = max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - inter
+    if union <= 0:
+        return 0.0
+    return inter / union
