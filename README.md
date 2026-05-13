@@ -103,12 +103,20 @@ Three stages run on the FastAPI worker. Stage A enriches user annotations into a
 
 ## Build phases
 
+All phases complete in [`v0.6.0`](https://github.com/MuratAlkan06/EasyLab/releases/tag/v0.6.0) (shipped 2026-05-13).
+
 - [x] **Phase 1** — Monorepo scaffold + docker-compose + Supabase migrations + fake job smoke test
 - [x] **Phase 2** — Template generation (Gemini 2.5 Pro adds `semantic_description`)
 - [x] **Phase 3** — Full detection + extraction (review table populates)
 - [x] **Phase 4** — Crops + confidence + `needs_review` flags
 - [x] **Phase 5** — CSV export + `cell_overrides` survive re-runs
-- [ ] **Phase 6** — Polish, in progress: circuit breaker ✅, global token budget ✅, per-workspace daily image quota ✅, server-trusted size + mime on confirm ✅; Supabase Realtime ❌, per-workspace token cap ❌, quota UI ❌, byte-decoded width/height ❌
+- [x] **Phase 6** — Polish: circuit breaker, global token budget, per-workspace daily image quota, server-trusted size + mime, byte-decoded width/height, per-workspace token cap, quota UI, Supabase Realtime, vitest harness
+
+---
+
+## Known issues
+
+- **Stage B detection accuracy** — Gemini sometimes boxes static device labels (printed "AMP", "VOLT") instead of the live LCD display next to them. A visual-crop matching attempt is parked in `git stash`; see `project_phase3_detection_status.md` for the full diagnosis and fallback options.
 
 ---
 
