@@ -6,7 +6,7 @@ import io
 
 from PIL import Image
 
-from app.pipeline.crop_utils import compute_crop_rect, crop_and_encode, is_box_valid
+from app.pipeline.crop_utils import box_iou, compute_crop_rect, crop_and_encode, is_box_valid
 
 
 def test_compute_crop_rect_basic() -> None:
@@ -74,3 +74,40 @@ def test_crop_and_encode_respects_max_edge() -> None:
     with Image.open(io.BytesIO(out)) as decoded:
         decoded.load()
         assert max(decoded.size) <= 768
+
+
+# ---------------------------------------------------------------------------
+# box_iou — used by Stage B diagnostics to detect "Gemini is confident about
+# the wrong region" (high box_confidence + low IoU vs the user's annotation).
+# ---------------------------------------------------------------------------
+
+
+def test_box_iou_identical_boxes() -> None:
+    box = {"x": 0.2, "y": 0.3, "width": 0.4, "height": 0.2}
+    assert box_iou(box, box) == 1.0
+
+
+def test_box_iou_disjoint_boxes() -> None:
+    a = {"x": 0.0, "y": 0.0, "width": 0.2, "height": 0.2}
+    b = {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2}
+    assert box_iou(a, b) == 0.0
+
+
+def test_box_iou_one_inside_the_other() -> None:
+    outer = {"x": 0.0, "y": 0.0, "width": 0.4, "height": 0.4}  # area 0.16
+    inner = {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2}  # area 0.04
+    # intersection = inner = 0.04; union = outer = 0.16; IoU = 0.25
+    assert abs(box_iou(outer, inner) - 0.25) < 1e-9
+
+
+def test_box_iou_partial_overlap() -> None:
+    a = {"x": 0.0, "y": 0.0, "width": 0.5, "height": 0.5}  # area 0.25
+    b = {"x": 0.25, "y": 0.25, "width": 0.5, "height": 0.5}  # area 0.25
+    # overlap is 0.25 x 0.25 = 0.0625; union = 0.25 + 0.25 - 0.0625 = 0.4375
+    assert abs(box_iou(a, b) - (0.0625 / 0.4375)) < 1e-9
+
+
+def test_box_iou_zero_area_box() -> None:
+    a = {"x": 0.2, "y": 0.2, "width": 0.0, "height": 0.3}
+    b = {"x": 0.2, "y": 0.2, "width": 0.4, "height": 0.4}
+    assert box_iou(a, b) == 0.0
