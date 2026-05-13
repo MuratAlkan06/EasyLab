@@ -17,6 +17,11 @@ services:
     build:
       context: ./apps/worker
       dockerfile: Dockerfile
+    # Override the production CMD to enable hot-reload during local dev. The
+    # worker_loop supervisor (PR #29) self-heals from transient claim errors
+    # so reload no longer causes the silent-wedge symptom that plagued us
+    # before. Production (Fly.io) inherits the Dockerfile CMD without --reload.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
       - "8000:8000"
     env_file: ./apps/worker/.env
