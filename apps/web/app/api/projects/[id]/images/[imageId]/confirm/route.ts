@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { imageSize } from "image-size";
 import { supabase } from "@/lib/supabase";
 import { getWorkspaceId } from "@/lib/workspace";
 import {
@@ -11,10 +12,22 @@ import {
 } from "@/lib/errors";
 
 const ConfirmSchema = z.object({
+  // Client-supplied hints — kept for backwards compatibility with older
+  // browsers, but ignored. The server reads the actual values from the bytes
+  // Supabase Storage accepted.
   size_bytes: z.number().int().min(1).optional(),
   width_px: z.number().int().min(1).optional(),
   height_px: z.number().int().min(1).optional(),
 });
+
+const ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/tiff",
+]);
+const MAX_BYTES = 52_428_800; // 50 MB — must match upload-urls validation
+const MIN_DIMENSION_PX = 16; // anything smaller is unusable for annotation
 
 export async function POST(
   req: NextRequest,
@@ -24,7 +37,6 @@ export async function POST(
   const workspaceId = await getWorkspaceId();
   if (!workspaceId) return notFound("No workspace");
 
-  // Verify project belongs to workspace
   const { data: project, error: projErr } = await supabase
     .from("projects")
     .select("id")
@@ -34,7 +46,6 @@ export async function POST(
   if (projErr) return internalError(projErr.message);
   if (!project) return notFound("Project not found");
 
-  // Optional body
   let body: unknown = {};
   const text = await req.text();
   if (text.length > 0) {
@@ -49,7 +60,6 @@ export async function POST(
     return validationError(parsed.error.issues[0].message);
   }
 
-  // Fetch image and verify it is in pending_upload
   const { data: image, error: imgErr } = await supabase
     .from("images")
     .select("id, status, storage_path")
@@ -62,7 +72,6 @@ export async function POST(
     return conflict(`Image is in status '${image.status}', not 'pending_upload'`);
   }
 
-  // Verify the object was actually uploaded
   const storagePath = image.storage_path as string;
   const { data: meta, error: metaErr } = await supabase.storage
     .from("easylab")
@@ -78,13 +87,86 @@ export async function POST(
     );
   }
 
-  const updates: Record<string, unknown> = { status: "uploaded" };
-  if (parsed.data.size_bytes !== undefined)
-    updates.size_bytes = parsed.data.size_bytes;
-  if (parsed.data.width_px !== undefined)
-    updates.width_px = parsed.data.width_px;
-  if (parsed.data.height_px !== undefined)
-    updates.height_px = parsed.data.height_px;
+  // Trust Supabase Storage's mime + size, not what the client body claims.
+  const stored = meta[0] as {
+    metadata?: { mimetype?: string; size?: number } | null;
+  };
+  const storedMime = stored.metadata?.mimetype;
+  const storedSize = stored.metadata?.size;
+
+  if (!storedMime || !ALLOWED_MIME.has(storedMime)) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      `Unsupported image type${storedMime ? ` '${storedMime}'` : ""}. Allowed: JPEG, PNG, WebP, TIFF.`
+    );
+  }
+
+  if (typeof storedSize !== "number" || storedSize < 1) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      "Uploaded file is empty or unreadable"
+    );
+  }
+
+  if (storedSize > MAX_BYTES) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      `File exceeds maximum size of ${Math.floor(MAX_BYTES / 1024 / 1024)} MB`
+    );
+  }
+
+  // Byte-decode width + height from the actual file. The full download is
+  // wasteful (we only need the header) but Supabase Storage's JS SDK doesn't
+  // expose ranged reads, and a typical lab JPEG is a few MB at most. The
+  // upside: width_px/height_px in the DB are now server-trusted, not whatever
+  // the browser claimed.
+  const { data: fileBlob, error: dlErr } = await supabase.storage
+    .from("easylab")
+    .download(storagePath);
+  if (dlErr || !fileBlob) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      "Could not read file from storage to verify dimensions"
+    );
+  }
+
+  let decodedWidth: number;
+  let decodedHeight: number;
+  try {
+    const buf = new Uint8Array(await fileBlob.arrayBuffer());
+    const dims = imageSize(buf);
+    if (!dims.width || !dims.height) {
+      throw new Error("decoder returned no dimensions");
+    }
+    decodedWidth = dims.width;
+    decodedHeight = dims.height;
+  } catch (e) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      `Could not decode image header: ${e instanceof Error ? e.message : "unknown error"}`,
+    );
+  }
+
+  if (decodedWidth < MIN_DIMENSION_PX || decodedHeight < MIN_DIMENSION_PX) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      `Image too small (${decodedWidth}×${decodedHeight}). Minimum ${MIN_DIMENSION_PX}px on each side.`,
+    );
+  }
+
+  const updates: Record<string, unknown> = {
+    status: "uploaded",
+    size_bytes: storedSize,
+    mime_type: storedMime,
+    width_px: decodedWidth,
+    height_px: decodedHeight,
+  };
 
   const { error: updErr } = await supabase
     .from("images")
@@ -93,5 +175,10 @@ export async function POST(
     .eq("project_id", projectId);
   if (updErr) return internalError(updErr.message);
 
-  return NextResponse.json({ image_id: imageId, status: "uploaded" });
+  return NextResponse.json({
+    image_id: imageId,
+    status: "uploaded",
+    width_px: decodedWidth,
+    height_px: decodedHeight,
+  });
 }

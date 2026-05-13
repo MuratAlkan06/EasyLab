@@ -104,11 +104,11 @@ Three stages run on the FastAPI worker. Stage A enriches user annotations into a
 ## Build phases
 
 - [x] **Phase 1** — Monorepo scaffold + docker-compose + Supabase migrations + fake job smoke test
-- [ ] **Phase 2** — Template generation (Gemini 2.5 Pro adds `semantic_description`)
-- [ ] **Phase 3** — Full detection + extraction (review table populates)
-- [ ] **Phase 4** — Crops + confidence + `needs_review` flags
-- [ ] **Phase 5** — CSV export + `cell_overrides` survive re-runs
-- [ ] **Phase 6** — Polish (Realtime, circuit breaker, image validation, quota UI)
+- [x] **Phase 2** — Template generation (Gemini 2.5 Pro adds `semantic_description`)
+- [x] **Phase 3** — Full detection + extraction (review table populates)
+- [x] **Phase 4** — Crops + confidence + `needs_review` flags
+- [x] **Phase 5** — CSV export + `cell_overrides` survive re-runs
+- [ ] **Phase 6** — Polish, in progress: circuit breaker ✅, global token budget ✅, per-workspace daily image quota ✅, server-trusted size + mime on confirm ✅; Supabase Realtime ❌, per-workspace token cap ❌, quota UI ❌, byte-decoded width/height ❌
 
 ---
 

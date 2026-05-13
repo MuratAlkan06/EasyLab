@@ -69,8 +69,12 @@ async def call_stage_a(
     model_name: str,
     image_bytes: bytes,
     fields: list[dict],
-) -> str:
-    """Run a single Stage A generation call. Returns raw `response.text` JSON."""
+):
+    """Run a single Stage A generation call.
+
+    Returns the raw Gemini response so callers can read both `.text` (the JSON
+    body) and `.usage_metadata.total_token_count` for spend-control accounting.
+    """
     config = types.GenerateContentConfig(
         temperature=1.0,
         thinking_config=types.ThinkingConfig(thinking_budget=-1),
@@ -79,7 +83,7 @@ async def call_stage_a(
         response_json_schema=TemplateGenerationResponse.model_json_schema(),
     )
 
-    response = await client.aio.models.generate_content(
+    return await client.aio.models.generate_content(
         model=model_name,
         contents=[
             _build_stage_a_prompt(fields),
@@ -87,7 +91,6 @@ async def call_stage_a(
         ],
         config=config,
     )
-    return response.text
 
 
 def _build_stage_b_prompt(fields: list[dict]) -> str:

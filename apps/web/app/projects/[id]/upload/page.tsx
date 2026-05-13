@@ -5,8 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Upload, CheckCircle, X, Star, ArrowRight, ChevronRight, Layers } from "lucide-react";
+import { Upload, CheckCircle, X, Star, ArrowRight, ImageIcon } from "lucide-react";
 import { ReactQueryProvider } from "@/lib/query-client";
+import { Shell, Button, PageTitle, Badge } from "@/components/Shell";
 
 type ImageItem = {
   id: string;
@@ -14,7 +15,6 @@ type ImageItem = {
   status: string;
   is_reference: boolean;
   signed_url: string | null;
-  // local-only (before confirm)
   localUrl?: string;
   uploading?: boolean;
   uploadProgress?: number;
@@ -35,13 +35,15 @@ function UploadPage() {
   const [images, setImages] = useState<ImageItem[]>([]);
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [settingRef, setSettingRef] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
-  // Load existing images on mount
   const { data: existingImages } = useQuery({
     queryKey: ["images", projectId],
     queryFn: async () => {
@@ -52,117 +54,160 @@ function UploadPage() {
   });
 
   useEffect(() => {
-    if (existingImages?.images) {
-      const uploaded = existingImages.images.filter((i) => i.status !== "pending_upload");
-      startTransition(() => {
-        setImages(uploaded);
-        const ref = uploaded.find((i) => i.is_reference);
-        if (ref) setReferenceId(ref.id);
+    if (!existingImages?.images) return;
+    const fromServer = existingImages.images.filter((i) => i.status !== "pending_upload");
+    startTransition(() => {
+      setImages((prev) => {
+        // Preserve any locally tracked failed/uploading rows that the server
+        // doesn't know about (failed confirms stay as 'pending_upload' on the
+        // server). Otherwise users would lose the visible 'failed' marker on
+        // the next refetch and not know why the upload didn't take.
+        const serverIds = new Set(fromServer.map((i) => i.id));
+        const localOnly = prev.filter(
+          (i) => !serverIds.has(i.id) && (i.status === "failed" || i.uploading),
+        );
+        return [...fromServer, ...localOnly];
       });
-    }
+      const ref = fromServer.find((i) => i.is_reference);
+      if (ref) setReferenceId(ref.id);
+    });
   }, [existingImages]);
 
-  const uploadFiles = useCallback(async (files: File[]) => {
-    const validFiles = files.filter((f) => {
-      if (!["image/jpeg", "image/png"].includes(f.type)) {
-        toast.error(`${f.name}: only JPG and PNG are supported`);
-        return false;
-      }
-      if (f.size > 20 * 1024 * 1024) {
-        toast.error(`${f.name}: file too large (max 20 MB)`);
-        return false;
-      }
-      return true;
-    });
-    if (!validFiles.length) return;
-
-    // Request signed upload URLs
-    let urlData: {
-      uploads: { image_id: string; upload_url: string; token: string; filename: string; storage_path: string }[];
-    };
-    try {
-      const res = await fetch(`/api/projects/${projectId}/upload-urls`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          files: validFiles.map((f) => ({
-            filename: f.name,
-            mime_type: f.type,
-            size_bytes: f.size,
-          })),
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error?.message ?? "Failed to get upload URLs");
-      urlData = body;
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
-      return;
-    }
-
-    // Add placeholder items while uploading
-    const placeholders: ImageItem[] = urlData.uploads.map((u, i) => ({
-      id: u.image_id,
-      filename: u.filename,
-      status: "pending_upload",
-      is_reference: false,
-      signed_url: null,
-      localUrl: URL.createObjectURL(validFiles[i]),
-      uploading: true,
-      uploadProgress: 0,
-    }));
-    setImages((prev) => [...prev, ...placeholders]);
-
-    // Upload each file directly to Supabase Storage
-    await Promise.all(
-      urlData.uploads.map(async (upload, i) => {
-        try {
-          await fetch(upload.upload_url, {
-            method: "PUT",
-            headers: { "Content-Type": validFiles[i].type },
-            body: validFiles[i],
-          });
-
-          // Confirm upload
-          await fetch(`/api/projects/${projectId}/images/${upload.image_id}/confirm`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              size_bytes: validFiles[i].size,
-            }),
-          });
-
-          if (!mountedRef.current) return;
-          setImages((prev) =>
-            prev.map((img) =>
-              img.id === upload.image_id
-                ? { ...img, status: "uploaded", uploading: false }
-                : img
-            )
-          );
-        } catch {
-          if (!mountedRef.current) return;
-          setImages((prev) =>
-            prev.map((img) =>
-              img.id === upload.image_id
-                ? { ...img, uploading: false, status: "failed" }
-                : img
-            )
-          );
-          toast.error(`Failed to upload ${upload.filename}`);
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      const validFiles = files.filter((f) => {
+        if (!["image/jpeg", "image/png"].includes(f.type)) {
+          toast.error(`${f.name}: only JPG and PNG are supported`);
+          return false;
         }
-      })
-    );
+        if (f.size > 20 * 1024 * 1024) {
+          toast.error(`${f.name}: file too large (max 20 MB)`);
+          return false;
+        }
+        return true;
+      });
+      if (!validFiles.length) return;
 
-    qc.invalidateQueries({ queryKey: ["images", projectId] });
-  }, [projectId, qc]);
+      let urlData: {
+        uploads: { image_id: string; upload_url: string; token: string; filename: string; storage_path: string }[];
+      };
+      try {
+        const res = await fetch(`/api/projects/${projectId}/upload-urls`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            files: validFiles.map((f) => ({
+              filename: f.name,
+              mime_type: f.type,
+              size_bytes: f.size,
+            })),
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error?.message ?? "Failed to get upload URLs");
+        urlData = body;
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Upload failed");
+        return;
+      }
+
+      const placeholders: ImageItem[] = urlData.uploads.map((u, i) => ({
+        id: u.image_id,
+        filename: u.filename,
+        status: "pending_upload",
+        is_reference: false,
+        signed_url: null,
+        localUrl: URL.createObjectURL(validFiles[i]),
+        uploading: true,
+        uploadProgress: 0,
+      }));
+      setImages((prev) => [...prev, ...placeholders]);
+
+      await Promise.all(
+        urlData.uploads.map(async (upload, i) => {
+          try {
+            const putRes = await fetch(upload.upload_url, {
+              method: "PUT",
+              headers: { "Content-Type": validFiles[i].type },
+              body: validFiles[i],
+            });
+            if (!putRes.ok) {
+              throw new Error(`Storage upload failed (${putRes.status})`);
+            }
+
+            const confirmRes = await fetch(
+              `/api/projects/${projectId}/images/${upload.image_id}/confirm`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ size_bytes: validFiles[i].size }),
+              },
+            );
+            if (!confirmRes.ok) {
+              const body = await confirmRes.json().catch(() => ({}));
+              throw new Error(
+                body?.error?.message ?? `Validation failed (${confirmRes.status})`,
+              );
+            }
+
+            if (!mountedRef.current) return;
+            setImages((prev) =>
+              prev.map((img) =>
+                img.id === upload.image_id ? { ...img, status: "uploaded", uploading: false } : img,
+              ),
+            );
+          } catch (e: unknown) {
+            if (!mountedRef.current) return;
+            setImages((prev) =>
+              prev.map((img) =>
+                img.id === upload.image_id ? { ...img, uploading: false, status: "failed" } : img,
+              ),
+            );
+            const reason = e instanceof Error ? e.message : "Upload failed";
+            toast.error(`${upload.filename}: ${reason}`);
+          }
+        }),
+      );
+
+      qc.invalidateQueries({ queryKey: ["images", projectId] });
+    },
+    [projectId, qc],
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: uploadFiles,
+    onDropRejected: (rejections) => {
+      // react-dropzone's accept matcher dropped these silently before. Surface
+      // every reason so the user knows why a file didn't upload.
+      for (const r of rejections) {
+        const reason = r.errors[0]?.message ?? "rejected";
+        toast.error(`${r.file.name}: ${reason}`);
+      }
+    },
     accept: { "image/jpeg": [], "image/png": [] },
     multiple: true,
     noClick: images.length > 0,
   });
+
+  async function handleRemove(imageId: string) {
+    if (removingId) return;
+    setRemovingId(imageId);
+    try {
+      const res = await fetch(`/api/images/${imageId}`, { method: "DELETE" });
+      // 404 is fine — the row may have been cleaned up already.
+      if (!res.ok && res.status !== 404) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error?.message ?? `Failed to remove (${res.status})`);
+      }
+      setImages((prev) => prev.filter((i) => i.id !== imageId));
+      if (referenceId === imageId) setReferenceId(null);
+      qc.invalidateQueries({ queryKey: ["images", projectId] });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove image");
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   async function handleSetReference(imageId: string) {
     if (settingRef) return;
@@ -178,9 +223,7 @@ function UploadPage() {
         throw new Error(body.error?.message ?? "Failed to set reference");
       }
       setReferenceId(imageId);
-      setImages((prev) =>
-        prev.map((img) => ({ ...img, is_reference: img.id === imageId }))
-      );
+      setImages((prev) => prev.map((img) => ({ ...img, is_reference: img.id === imageId })));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to set reference image");
     } finally {
@@ -192,122 +235,166 @@ function UploadPage() {
   const canProceed = referenceId !== null && uploadedImages.length >= 1;
 
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white px-8 py-4 flex items-center gap-3">
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center gap-2 text-zinc-500 hover:text-zinc-800 text-sm"
+    <Shell
+      crumbs={[
+        { label: "Project", href: `/projects/${projectId}` },
+        { label: "Upload" },
+      ]}
+      rightSlot={
+        <Button
+          size="md"
+          disabled={!canProceed}
+          onClick={() => router.push(`/projects/${projectId}/annotate`)}
         >
-          <Layers size={18} />
-          EasyLab
-        </button>
-        <ChevronRight size={14} className="text-zinc-300" />
-        <button
-          onClick={() => router.push(`/projects/${projectId}`)}
-          className="text-sm text-zinc-500 hover:text-zinc-800"
-        >
-          Project
-        </button>
-        <ChevronRight size={14} className="text-zinc-300" />
-        <span className="text-sm font-medium text-zinc-900">Upload</span>
-      </header>
+          Next: Annotate <ArrowRight size={14} />
+        </Button>
+      }
+    >
+      <PageTitle
+        title="Upload images"
+        description="Add 10–50 similar lab images. Then click one to mark it as the reference for annotation."
+      />
 
-      <main className="max-w-5xl mx-auto px-8 py-10 space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold text-zinc-900">Upload Images</h2>
-          <p className="text-sm text-zinc-500 mt-1">
-            Upload your lab images, then click one to set it as the reference image.
-          </p>
+      <div
+        {...getRootProps()}
+        className={[
+          "relative rounded-2xl border-2 border-dashed p-10 text-center cursor-pointer transition-all overflow-hidden",
+          isDragActive
+            ? "border-[var(--primary)] bg-[var(--primary-soft)]"
+            : "border-[var(--border-strong)] bg-[var(--surface)] hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]/50",
+        ].join(" ")}
+      >
+        <input {...getInputProps()} />
+        <div className="grid place-items-center w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 text-indigo-600 dark:text-indigo-300 mb-4">
+          <Upload size={24} strokeWidth={2} />
         </div>
+        <p className="text-[15px] font-medium text-[var(--foreground)]">
+          {isDragActive ? "Drop your images here" : "Drag & drop images, or click to browse"}
+        </p>
+        <p className="text-xs text-[var(--muted)] mt-1">
+          JPG or PNG · max 20 MB each · up to 50 images
+        </p>
+      </div>
 
-        {/* Dropzone */}
-        <div
-          {...getRootProps()}
-          className={[
-            "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors",
-            isDragActive
-              ? "border-blue-400 bg-blue-50"
-              : "border-zinc-300 bg-white hover:border-zinc-400",
-          ].join(" ")}
-        >
-          <input {...getInputProps()} />
-          <Upload size={32} className="mx-auto text-zinc-400 mb-3" />
-          <p className="text-sm font-medium text-zinc-700">
-            {isDragActive ? "Drop images here" : "Drag & drop images, or click to browse"}
-          </p>
-          <p className="text-xs text-zinc-400 mt-1">JPG, PNG · Max 20 MB each</p>
-        </div>
-
-        {/* Image grid */}
-        {images.length > 0 && (
-          <div>
-            <p className="text-sm text-zinc-500 mb-3">
+      {images.length > 0 && (
+        <section className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-[var(--foreground)]">Your images</h3>
+              <Badge tone="neutral">{images.length}</Badge>
+            </div>
+            <p className="text-xs text-[var(--muted)]">
               Click an image to set it as the{" "}
-              <span className="font-medium text-zinc-700">reference image</span> for annotation.
+              <span className="font-medium text-[var(--foreground)]">reference</span>
             </p>
-            <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
-              {images.map((img) => (
+          </div>
+
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            {images.map((img) => {
+              const isUploaded = img.status === "uploaded";
+              const isFailed = img.status === "failed";
+              const isRemoving = removingId === img.id;
+              return (
                 <div
                   key={img.id}
-                  onClick={() => img.status === "uploaded" && handleSetReference(img.id)}
                   className={[
-                    "relative rounded-lg overflow-hidden border-2 transition-all",
-                    img.status === "uploaded"
+                    "group relative rounded-xl overflow-hidden border-2 transition-all bg-[var(--surface-muted)]",
+                    isUploaded
                       ? img.is_reference
-                        ? "border-blue-500 cursor-default"
-                        : "border-transparent cursor-pointer hover:border-zinc-400"
-                      : "border-transparent cursor-default",
+                        ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/30"
+                        : "border-transparent hover:border-[var(--primary)]/60 hover:shadow-md hover:shadow-indigo-500/10 hover:-translate-y-0.5"
+                      : isFailed
+                      ? "border-red-500/40"
+                      : "border-transparent",
                   ].join(" ")}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={img.localUrl ?? img.signed_url ?? ""}
-                    alt={img.filename}
-                    className="w-full aspect-square object-cover"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => isUploaded && !img.is_reference && handleSetReference(img.id)}
+                    disabled={!isUploaded || img.is_reference || settingRef}
+                    aria-label={
+                      isUploaded
+                        ? img.is_reference
+                          ? `${img.filename} (reference)`
+                          : `Set ${img.filename} as reference`
+                        : img.filename
+                    }
+                    className="block w-full text-left disabled:cursor-default cursor-pointer"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={img.localUrl ?? img.signed_url ?? ""}
+                      alt={img.filename}
+                      className="w-full aspect-square object-cover"
+                    />
 
-                  {img.uploading && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  )}
+                    {img.uploading && (
+                      <div className="absolute inset-0 bg-black/45 grid place-items-center">
+                        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
 
-                  {img.status === "failed" && (
-                    <div className="absolute inset-0 bg-red-900/60 flex items-center justify-center">
-                      <X size={20} className="text-white" />
-                    </div>
-                  )}
+                    {isFailed && (
+                      <div className="absolute inset-0 bg-red-900/60 grid place-items-center">
+                        <X size={20} className="text-white" />
+                      </div>
+                    )}
 
-                  {img.is_reference && (
-                    <div className="absolute top-1 left-1 bg-blue-500 text-white text-xs font-medium px-1.5 py-0.5 rounded flex items-center gap-1">
-                      <Star size={10} />
-                      Ref
-                    </div>
-                  )}
+                    {img.is_reference && (
+                      <div className="absolute top-1.5 left-1.5 bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
+                        <Star size={9} strokeWidth={3} fill="currentColor" /> REF
+                      </div>
+                    )}
 
-                  {img.status === "uploaded" && !img.uploading && (
-                    <div className="absolute bottom-1 right-1">
-                      <CheckCircle size={16} className="text-green-400" />
-                    </div>
-                  )}
+                    {isUploaded && !img.is_reference && (
+                      <div className="absolute bottom-1.5 right-1.5">
+                        <CheckCircle size={14} className="text-emerald-400 drop-shadow" />
+                      </div>
+                    )}
+
+                    {!isUploaded && !img.uploading && !isFailed && (
+                      <div className="absolute inset-0 bg-[var(--surface-muted)] grid place-items-center text-[var(--subtle)]">
+                        <ImageIcon size={20} />
+                      </div>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemove(img.id);
+                    }}
+                    disabled={isRemoving || img.uploading}
+                    aria-label={`Remove ${img.filename}`}
+                    title="Remove"
+                    className={[
+                      "absolute top-1.5 right-1.5 grid place-items-center w-6 h-6 rounded-full text-white shadow transition-opacity disabled:opacity-50 disabled:cursor-wait",
+                      isFailed
+                        ? "bg-red-600/90 hover:bg-red-700 opacity-100"
+                        : "bg-black/55 hover:bg-black/80 opacity-0 group-hover:opacity-100 focus:opacity-100",
+                    ].join(" ")}
+                  >
+                    {isRemoving ? (
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <X size={12} strokeWidth={3} />
+                    )}
+                  </button>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        )}
+        </section>
+      )}
 
-        {/* Navigation */}
-        <div className="flex justify-end pt-2">
-          <button
-            disabled={!canProceed}
-            onClick={() => router.push(`/projects/${projectId}/annotate`)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 text-white text-sm rounded-lg hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            Next: Annotate
-            <ArrowRight size={16} />
-          </button>
-        </div>
-      </main>
-    </div>
+      {!canProceed && images.length > 0 && (
+        <p className="mt-6 text-xs text-[var(--muted)]">
+          {referenceId
+            ? "Wait for uploads to finish, then continue to annotate."
+            : "Pick a reference image to continue."}
+        </p>
+      )}
+    </Shell>
   );
 }

@@ -391,13 +391,13 @@ export default function AnnotateClient({ projectId }: { projectId: string }) {
       : null;
 
   return (
-    <div className="flex h-screen bg-zinc-100">
+    <div className="flex h-screen bg-[var(--surface-muted)]">
       {/* Canvas area */}
       <div className="flex-1 flex flex-col min-w-0">
         <Toolbar mode={mode} onChange={setMode} count={fields.length} />
         <div
           ref={containerRef}
-          className="flex-1 flex items-center justify-center overflow-hidden p-4"
+          className="flex-1 flex items-center justify-center overflow-hidden p-6"
           style={{ cursor: mode === "draw" ? "crosshair" : "default" }}
         >
           {image && stageSize.width > 0 && (
@@ -408,7 +408,7 @@ export default function AnnotateClient({ projectId }: { projectId: string }) {
               onMouseDown={onStageMouseDown}
               onMouseMove={onStageMouseMove}
               onMouseUp={onStageMouseUp}
-              className="bg-white shadow"
+              className="bg-white shadow-lg shadow-slate-900/10 rounded-md overflow-hidden"
             >
               <Layer listening={false}>
                 <KImage
@@ -534,23 +534,24 @@ function Toolbar({
   count: number;
 }) {
   const btn = (active: boolean) =>
-    `flex items-center gap-1.5 px-3 py-1.5 rounded text-sm border ${
+    `flex items-center gap-1.5 px-3 h-8 rounded-md text-sm font-medium border transition-colors ${
       active
-        ? "bg-zinc-900 text-white border-zinc-900"
-        : "bg-white text-zinc-700 border-zinc-300 hover:bg-zinc-50"
+        ? "bg-gradient-to-b from-indigo-500 to-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/30"
+        : "bg-[var(--surface)] text-[var(--foreground)] border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
     }`;
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-white border-b border-zinc-200">
+    <div className="flex items-center gap-2 px-4 h-12 bg-[var(--surface)] border-b border-[var(--border)]">
       <button className={btn(mode === "draw")} onClick={() => onChange("draw")}>
         <Pencil size={14} /> Draw
       </button>
-      <button
-        className={btn(mode === "select")}
-        onClick={() => onChange("select")}
-      >
+      <button className={btn(mode === "select")} onClick={() => onChange("select")}>
         <MousePointer2 size={14} /> Select
       </button>
-      <span className="ml-auto text-xs text-zinc-500">
+      <span className="text-[10px] text-[var(--subtle)] ml-1">
+        Press <kbd className="px-1 py-0.5 rounded border border-[var(--border)] bg-[var(--surface-muted)] font-mono">D</kbd> /{" "}
+        <kbd className="px-1 py-0.5 rounded border border-[var(--border)] bg-[var(--surface-muted)] font-mono">S</kbd> to switch
+      </span>
+      <span className="ml-auto text-xs font-medium text-[var(--muted)] tabular-nums">
         {count} / {MAX_FIELDS} fields
       </span>
     </div>
@@ -584,20 +585,23 @@ function FieldSidebar({
 }: SidebarProps) {
   return (
     <aside
-      className="flex flex-col bg-white border-l border-zinc-200"
+      className="flex flex-col bg-[var(--surface)] border-l border-[var(--border)]"
       style={{ width: SIDEBAR_WIDTH }}
     >
-      <div className="px-4 py-3 border-b border-zinc-200">
-        <h2 className="text-sm font-medium text-zinc-800">Fields</h2>
-        <p className="text-xs text-zinc-500 mt-0.5">
-          Draw boxes on the reference image
+      <div className="px-4 py-3.5 border-b border-[var(--border)]">
+        <h2 className="text-sm font-semibold text-[var(--foreground)]">Fields</h2>
+        <p className="text-xs text-[var(--muted)] mt-0.5">
+          Draw boxes on the reference image, then name each one.
         </p>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {fields.length === 0 ? (
-          <p className="text-xs text-zinc-400 text-center py-8">
-            No fields yet. Draw a rectangle to start.
-          </p>
+          <div className="text-center py-12 px-4">
+            <div className="text-xs text-[var(--subtle)]">No fields yet.</div>
+            <div className="text-xs text-[var(--muted)] mt-1">
+              Drag a rectangle on the image to start.
+            </div>
+          </div>
         ) : (
           fields.map((f) => (
             <FieldRow
@@ -613,14 +617,14 @@ function FieldSidebar({
           ))
         )}
       </div>
-      <div className="p-3 border-t border-zinc-200">
+      <div className="p-3 border-t border-[var(--border)] bg-[var(--surface-muted)]/50">
         <button
-          className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white text-sm rounded py-2 hover:bg-zinc-700 disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-2 h-10 rounded-lg bg-gradient-to-b from-indigo-500 to-indigo-600 text-white text-sm font-medium shadow-sm shadow-indigo-500/30 hover:from-indigo-500 hover:to-indigo-700 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           disabled={saving || fields.length === 0}
           onClick={onSave}
         >
           {saving && <Loader2 size={14} className="animate-spin" />}
-          {saving ? "Saving…" : "Save & Continue"}
+          {saving ? "Saving…" : "Save & continue"}
         </button>
       </div>
     </aside>
@@ -659,40 +663,40 @@ function FieldRow({
   return (
     <div
       onClick={onSelect}
-      className={`rounded border p-2.5 space-y-2 cursor-pointer ${
+      className={`rounded-lg border p-2.5 space-y-2 cursor-pointer transition-colors ${
         selected
-          ? "border-zinc-900 bg-zinc-50"
-          : "border-zinc-200 hover:border-zinc-300"
+          ? "border-[var(--primary)] bg-[var(--primary-soft)] shadow-sm shadow-indigo-500/10"
+          : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]"
       }`}
     >
       <div className="flex items-center gap-2">
         <span
-          className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+          className="inline-block w-3 h-3 rounded-full flex-shrink-0 ring-2 ring-white shadow-sm"
           style={{ backgroundColor: field.color }}
         />
         <input
           ref={inputRef}
-          className="flex-1 min-w-0 text-sm border border-zinc-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-zinc-400"
-          placeholder="Field name"
+          className="flex-1 min-w-0 h-8 text-sm border border-[var(--border-strong)] bg-[var(--surface)] rounded-md px-2 placeholder:text-[var(--subtle)] focus:outline-none focus:border-[var(--primary)]"
+          placeholder="field_name"
           value={field.field_name}
           maxLength={100}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => onChange({ field_name: e.target.value })}
         />
         <button
-          className="text-zinc-400 hover:text-red-600 p-1"
+          className="p-1.5 rounded-md text-[var(--subtle)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
           onClick={(e) => {
             e.stopPropagation();
             onDelete();
           }}
           aria-label="Delete field"
         >
-          <Trash2 size={14} />
+          <Trash2 size={13} />
         </button>
       </div>
       <div className="flex items-center gap-2">
         <select
-          className="text-xs border border-zinc-300 rounded px-1.5 py-1 bg-white"
+          className="h-7 text-xs border border-[var(--border)] rounded-md px-1.5 bg-[var(--surface)] text-[var(--muted)]"
           value={fmt?.type ?? ""}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => {
@@ -716,7 +720,7 @@ function FieldRow({
         </select>
         {fmt?.type === "number" && (
           <input
-            className="flex-1 min-w-0 text-xs border border-zinc-300 rounded px-2 py-1"
+            className="flex-1 min-w-0 h-7 text-xs border border-[var(--border)] bg-[var(--surface)] rounded-md px-2 placeholder:text-[var(--subtle)] focus:outline-none focus:border-[var(--primary)]"
             placeholder="unit (e.g. mV)"
             value={fmt.unit ?? ""}
             onClick={(e) => e.stopPropagation()}

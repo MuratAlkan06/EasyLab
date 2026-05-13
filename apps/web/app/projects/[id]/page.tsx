@@ -2,8 +2,10 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Clock, ChevronRight, Layers } from "lucide-react";
+import { Check, ArrowRight, Upload, Pencil, Cpu, Table2, Download } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { ReactQueryProvider } from "@/lib/query-client";
+import { Shell, Card, PageTitle, Spinner } from "@/components/Shell";
 
 type Project = {
   id: string;
@@ -18,6 +20,8 @@ type Project = {
 
 type Step = {
   label: string;
+  description: string;
+  icon: LucideIcon;
   href: (id: string) => string;
   done: (p: Project) => boolean;
   accessible: (p: Project) => boolean;
@@ -26,30 +30,40 @@ type Step = {
 const STEPS: Step[] = [
   {
     label: "Upload",
+    description: "Drop in 10–50 similar images and pick a reference",
+    icon: Upload,
     href: (id) => `/projects/${id}/upload`,
     done: (p) => (p.image_count ?? 0) >= 1 && p.reference_image_id !== null,
     accessible: () => true,
   },
   {
     label: "Annotate",
+    description: "Draw rectangles around each field on the reference",
+    icon: Pencil,
     href: (id) => `/projects/${id}/annotate`,
     done: (p) => (p.field_count ?? 0) >= 1,
     accessible: (p) => (p.image_count ?? 0) >= 1 && p.reference_image_id !== null,
   },
   {
     label: "Process",
+    description: "Run AI extraction across the whole batch",
+    icon: Cpu,
     href: (id) => `/projects/${id}/process`,
     done: (p) => p.status === "done",
     accessible: (p) => (p.field_count ?? 0) >= 1,
   },
   {
     label: "Review",
+    description: "Inspect each value, fix what the AI missed",
+    icon: Table2,
     href: (id) => `/projects/${id}/review`,
     done: () => false,
     accessible: (p) => p.status === "done",
   },
   {
     label: "Export",
+    description: "Download the cleaned data as CSV",
+    icon: Download,
     href: (id) => `/projects/${id}/export`,
     done: () => false,
     accessible: (p) => p.status === "done",
@@ -79,92 +93,106 @@ function ProjectHub() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-zinc-50 flex items-center justify-center">
-        <p className="text-sm text-zinc-400">Loading…</p>
-      </div>
+      <Shell>
+        <div className="flex items-center gap-2 text-[var(--muted)] text-sm">
+          <Spinner /> Loading project…
+        </div>
+      </Shell>
     );
   }
 
   if (isError || !project) {
     return (
-      <div className="min-h-screen bg-zinc-50 flex items-center justify-center">
-        <p className="text-sm text-red-500">Project not found.</p>
-      </div>
+      <Shell>
+        <Card className="p-8 text-center text-sm text-red-600">Project not found.</Card>
+      </Shell>
     );
   }
 
   const currentStep = STEPS.findIndex((s) => !s.done(project));
+  const completed = STEPS.filter((s) => s.done(project)).length;
+  const pct = Math.round((completed / STEPS.length) * 100);
 
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white px-8 py-4 flex items-center gap-3">
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center gap-2 text-zinc-500 hover:text-zinc-800 text-sm"
-        >
-          <Layers size={18} />
-          EasyLab
-        </button>
-        <ChevronRight size={14} className="text-zinc-300" />
-        <span className="text-sm font-medium text-zinc-900">{project.name}</span>
-      </header>
+    <Shell crumbs={[{ label: project.name }]} contentClassName="max-w-3xl">
+      <PageTitle
+        title={project.name}
+        description={`${completed} of ${STEPS.length} steps complete`}
+      />
 
-      <main className="max-w-2xl mx-auto px-8 py-12">
-        <h2 className="text-xl font-semibold text-zinc-900 mb-8">{project.name}</h2>
+      <div className="mb-6 h-1.5 rounded-full bg-[var(--surface-muted)] overflow-hidden">
+        <div
+          className="h-full bg-gradient-to-r from-indigo-500 to-violet-600 transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
 
-        <ol className="space-y-3">
-          {STEPS.map((step, i) => {
-            const done = step.done(project);
-            const accessible = step.accessible(project);
-            const isCurrent = i === currentStep;
+      <ol className="space-y-2.5">
+        {STEPS.map((step, i) => {
+          const done = step.done(project);
+          const accessible = step.accessible(project);
+          const isCurrent = i === currentStep;
+          const Icon = step.icon;
 
-            return (
-              <li key={step.label}>
-                <button
-                  disabled={!accessible}
-                  onClick={() => accessible && router.push(step.href(id))}
+          return (
+            <li key={step.label}>
+              <button
+                disabled={!accessible}
+                onClick={() => accessible && router.push(step.href(id))}
+                className={[
+                  "group w-full flex items-center gap-4 p-4 rounded-xl border text-left transition-all",
+                  done
+                    ? "border-emerald-200/70 bg-emerald-50/60 dark:border-emerald-400/20 dark:bg-emerald-500/5 hover:bg-emerald-50"
+                    : isCurrent && accessible
+                    ? "border-[var(--primary)] bg-[var(--primary-soft)] shadow-sm shadow-indigo-500/10 hover:shadow-md hover:shadow-indigo-500/20"
+                    : accessible
+                    ? "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)] hover:-translate-y-px hover:shadow-sm"
+                    : "border-[var(--border)] bg-[var(--surface-muted)]/60 opacity-50 cursor-not-allowed",
+                ].join(" ")}
+              >
+                <div
                   className={[
-                    "w-full flex items-center gap-4 p-4 rounded-lg border text-left transition-colors",
+                    "grid place-items-center w-10 h-10 rounded-lg flex-shrink-0 text-sm font-semibold transition-colors",
                     done
-                      ? "border-green-200 bg-green-50 hover:bg-green-100"
+                      ? "bg-emerald-500 text-white"
                       : isCurrent && accessible
-                      ? "border-blue-300 bg-blue-50 hover:bg-blue-100"
-                      : accessible
-                      ? "border-zinc-200 bg-white hover:bg-zinc-50"
-                      : "border-zinc-100 bg-zinc-50 opacity-50 cursor-not-allowed",
+                      ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-sm shadow-indigo-500/30"
+                      : "bg-[var(--surface-muted)] text-[var(--muted)] border border-[var(--border)]",
                   ].join(" ")}
                 >
-                  <div
-                    className={[
-                      "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold",
-                      done
-                        ? "bg-green-500 text-white"
-                        : isCurrent && accessible
-                        ? "bg-blue-500 text-white"
-                        : "bg-zinc-200 text-zinc-500",
-                    ].join(" ")}
-                  >
-                    {done ? <Check size={16} /> : isCurrent ? <Clock size={16} /> : i + 1}
+                  {done ? <Check size={18} strokeWidth={3} /> : <Icon size={18} />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-[var(--subtle)]">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span
+                      className={[
+                        "font-semibold",
+                        done
+                          ? "text-emerald-800 dark:text-emerald-300"
+                          : isCurrent
+                          ? "text-[var(--foreground)]"
+                          : "text-[var(--foreground)]",
+                      ].join(" ")}
+                    >
+                      {step.label}
+                    </span>
                   </div>
-                  <span
-                    className={[
-                      "font-medium",
-                      done
-                        ? "text-green-800"
-                        : isCurrent
-                        ? "text-blue-800"
-                        : "text-zinc-700",
-                    ].join(" ")}
-                  >
-                    {step.label}
-                  </span>
-                  {accessible && <ChevronRight size={16} className="ml-auto text-zinc-300" />}
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </main>
-    </div>
+                  <p className="text-xs text-[var(--muted)] mt-0.5">{step.description}</p>
+                </div>
+                {accessible && (
+                  <ArrowRight
+                    size={16}
+                    className="text-[var(--subtle)] group-hover:text-[var(--primary)] group-hover:translate-x-0.5 transition-all flex-shrink-0"
+                  />
+                )}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </Shell>
   );
 }

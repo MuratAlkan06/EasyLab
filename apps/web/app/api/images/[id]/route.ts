@@ -13,11 +13,15 @@ export async function DELETE(
   const workspaceId = await getWorkspaceId();
   if (!workspaceId) return notFound("No workspace");
 
-  // Verify image exists and belongs to a project in this workspace
+  // Verify image exists and belongs to a project in this workspace.
+  // Disambiguate the embed: there are two FKs between images and projects
+  // (images.project_id and projects.reference_image_id), so hint the column
+  // name on the images side. Defaults to LEFT join — the null check below
+  // catches orphans.
   const { data: image, error: imgErr } = await supabase
     .from("images")
     .select(
-      "id, project_id, is_reference, storage_path, projects!inner(workspace_id)"
+      "id, project_id, is_reference, storage_path, projects!project_id(workspace_id)"
     )
     .eq("id", imageId)
     .maybeSingle();

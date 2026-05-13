@@ -35,7 +35,12 @@ async def _recover_stale_jobs(pool: asyncpg.Pool) -> None:
 
 
 async def _claim_job(pool: asyncpg.Pool) -> dict | None:
-    """Claim the oldest queued job, or reclaim a stale running job."""
+    """Claim the oldest queued job, or reclaim a stale running job.
+
+    Skips jobs whose `paused_until` is in the future — the spend-control
+    circuit breaker writes that column to keep us from hammering Gemini
+    during a cooldown.
+    """
     row = await pool.fetchrow(
         """
         UPDATE jobs
@@ -46,9 +51,12 @@ async def _claim_job(pool: asyncpg.Pool) -> dict | None:
             locked_by    = $1
         WHERE id = (
             SELECT id FROM jobs
-            WHERE status = 'queued'
-               OR (status = 'running'
-                   AND heartbeat_at < now() - ($2 || ' seconds')::interval)
+            WHERE (paused_until IS NULL OR paused_until <= now())
+              AND (
+                status = 'queued'
+                OR (status = 'running'
+                    AND heartbeat_at < now() - ($2 || ' seconds')::interval)
+              )
             ORDER BY created_at
             FOR UPDATE SKIP LOCKED
             LIMIT 1
