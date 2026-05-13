@@ -79,7 +79,19 @@ async def worker_loop() -> None:
     log.info("worker.started", worker_id=WORKER_ID)
 
     while True:
-        job = await _claim_job(pool)
+        # Wrap the claim in its own try/except. Previously a transient asyncpg
+        # error here (pool blip, connection reset, DB restart) would propagate
+        # out of worker_loop, kill the task silently, and leave the process
+        # alive with no claim-loop running — symptom: jobs stuck at 'queued'
+        # forever with no logs. Now we log + sleep + retry instead.
+        try:
+            job = await _claim_job(pool)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error("worker.claim_failed", error=str(exc), worker_id=WORKER_ID)
+            await asyncio.sleep(POLL_INTERVAL)
+            continue
 
         if not job:
             try:
