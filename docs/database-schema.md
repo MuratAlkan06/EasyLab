@@ -76,8 +76,8 @@ create table images (
   filename       text        not null,  -- original client filename for display
   mime_type    text        not null,   -- e.g. image/jpeg, image/png
   size_bytes   bigint,                 -- nullable until confirmed
-  width_px     int,                    -- nullable until confirmed
-  height_px    int,                    -- nullable until confirmed
+  width_px     int,                    -- nullable until confirmed; upright (EXIF-applied) dims
+  height_px    int,                    -- nullable until confirmed; upright (EXIF-applied) dims
   status       text        not null default 'pending_upload',
                             -- pending_upload | uploaded | processing | done | failed
   is_reference boolean     not null default false,
@@ -99,7 +99,7 @@ create index ix_images_project_id on images (project_id);
 ```
 
 Assumption: `storage_path` is always set at row creation (before upload), because the signed URL is generated first and the path is decided server-side.
-Assumption: `size_bytes`, `width_px`, `height_px` are filled in at confirm time.
+Assumption: `size_bytes`, `width_px`, `height_px` are filled in at confirm time. `width_px`/`height_px` are upright (EXIF-applied) dimensions: the confirm route swaps the decoded width/height for EXIF orientations 5–8.
 
 ---
 
@@ -230,7 +230,7 @@ create table cells (
 
   -- Provenance
   model_versions      jsonb       not null default '{}',
-  -- shape: {"detector": "gemini-2.0-flash", "extractor": "gemini-2.0-flash"}
+  -- shape: {"detector": "align-v1+opencv4.13.0", "extractor": "gemini-2.5-flash"}
   retried             boolean     not null default false,
 
   created_at          timestamptz not null default now(),
@@ -399,7 +399,7 @@ combined_confidence = round(0.4 × box_confidence + 0.6 × value_confidence, 3)
 | ok | combined_confidence >= 0.85 AND legible = true AND no validation_error |
 | low_confidence | combined_confidence in [0.60, 0.85) |
 | needs_review | combined_confidence < 0.60 OR legible = false OR validation_error is not null |
-| failed | image_task failed (found=false) or parsed_value null after retry |
+| failed | no usable Stage B box (field not located and no valid reference_box) or parsed_value null after retry |
 
 `failed` cells are written even when parsing fails so the review table has a complete row for every (image × field) pair.
 
@@ -431,7 +431,7 @@ Shape is `{"type": "number"|"text"|"boolean", "unit": "V"|null}`. Rationale:
 
 ### model_versions — JSONB (recommended)
 
-Shape is `{"detector": "gemini-2.0-flash-001", "extractor": "gemini-2.0-flash-001"}`. Rationale:
+Shape is `{"detector": "align-v1+opencv4.13.0", "extractor": "gemini-2.5-flash"}`. Since Phase 7, `detector` names the Stage B aligner version plus the OpenCV build (not a model). Cells failed in Stage B carry only `detector`. Rationale:
 
 - Number of model roles is unknown and will grow (e.g., OCR fallback adds a third key).
 - Never filtered or grouped in MVP queries.

@@ -1,8 +1,9 @@
 """Gemini client wrapper.
 
-Owns the singleton `genai.Client` and provides per-stage async call helpers.
-Only this module talks to the Gemini API; all other pipeline modules call
-through the helpers here.
+Owns the singleton `genai.Client` and provides per-stage async call helpers
+(Stage A template generation, Stage C value extraction; Stage B detection
+makes no model calls since ADR-007). Only this module talks to the Gemini
+API; all other pipeline modules call through the helpers here.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ from google import genai
 from google.genai import types
 
 from app.pipeline.schemas import (
-    DetectionResponse,
     ExtractionResponse,
     TemplateGenerationResponse,
 )
@@ -91,92 +91,6 @@ async def call_stage_a(
         ],
         config=config,
     )
-
-
-def _build_stage_b_prompt(fields: list[dict]) -> str:
-    """Render the Stage B user prompt from the field list with semantic descriptions."""
-    lines = []
-    for f in fields:
-        description = f.get("semantic_description") or f["field_name"]
-        ref_box = f.get("reference_box")
-        if ref_box:
-            x_lo = round(ref_box["x"] * 100)
-            x_hi = round((ref_box["x"] + ref_box["width"]) * 100)
-            y_lo = round(ref_box["y"] * 100)
-            y_hi = round((ref_box["y"] + ref_box["height"]) * 100)
-            spatial = f" [ref position: x {x_lo}%–{x_hi}%, y {y_lo}%–{y_hi}% of image]"
-        else:
-            spatial = ""
-        lines.append(f"- {f['field_name']}: {description}{spatial}")
-    field_block = "\n".join(lines)
-
-    return (
-        "You are analyzing a lab instrument image. Locate each active display "
-        "element described below. Each description refers specifically to a live "
-        "readout (LCD segment, digital display, gauge needle, etc.) — NOT to any "
-        "static label, printed text, or socket marking on the device body.\n\n"
-        f"{field_block}\n\n"
-        "The [ref position] hint shows approximately where this display appeared "
-        "in a reference image of the same instrument. The current image may have "
-        "slight position/zoom differences, but the display should be near that region.\n\n"
-        "Rules:\n"
-        "- Your box must tightly enclose ONLY the active display/readout element "
-        "itself — the region that shows a changing numeric or text value.\n"
-        "- Do NOT box static text printed on the device (e.g. 'AMP', 'VOLT', "
-        "terminal labels, range markings, socket labels).\n"
-        "- Use the [ref position] hint to anchor your search — if the hint points "
-        "to a region and you see an active display there, that is almost certainly "
-        "the correct element even if your confidence would otherwise be low.\n"
-        "- If you are genuinely uncertain whether a region is a live display or a "
-        "static label, return it with a low box_confidence (≤0.3) rather than "
-        "defaulting to found=false — a low-confidence detection is more useful than "
-        "no detection.\n"
-        "- Only set found=false when the display element is clearly absent from the "
-        "image entirely (e.g. cropped out, covered, or this instrument does not "
-        "have that field at all).\n"
-        "- If the display is present but partially obscured or at an angle, still "
-        "return it with an appropriate box_confidence.\n\n"
-        "For every field return:\n"
-        "- field_name: exactly as listed above\n"
-        "- found: true only if you can locate the active display element\n"
-        "- box: [ymin, xmin, ymax, xmax] in 0..1000 coordinate space (Gemini "
-        "native). null when found is false.\n"
-        "- box_confidence: 0.0..1.0 — your confidence that the box encloses the "
-        "correct live readout (0.0 when not found)\n\n"
-        "Return one entry per field listed above, in the same order."
-    )
-
-
-async def call_stage_b(
-    client: genai.Client,
-    model_name: str,
-    image_bytes: bytes,
-    fields: list[dict],
-) -> DetectionResponse:
-    """Run a single Stage B generation call. Returns a parsed DetectionResponse.
-
-    `fields` is a list of ``{"field_name": str, "semantic_description": str | None}``.
-    """
-    config = types.GenerateContentConfig(
-        temperature=1.0,
-        thinking_config=types.ThinkingConfig(thinking_budget=-1),
-        max_output_tokens=8192,
-        response_mime_type="application/json",
-        response_json_schema=DetectionResponse.model_json_schema(),
-    )
-
-    response = await client.aio.models.generate_content(
-        model=model_name,
-        contents=[
-            _build_stage_b_prompt(fields),
-            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-        ],
-        config=config,
-    )
-    text = response.text
-    if not text:
-        raise ValueError("Gemini returned empty response for Stage B detection")
-    return DetectionResponse.model_validate_json(text)
 
 
 def _build_stage_c_prompt(field: dict) -> str:

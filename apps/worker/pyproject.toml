@@ -10,15 +10,31 @@ dependencies = [
     "asyncpg>=0.30",
     "supabase>=2.10",
     "google-genai>=1.0",
-    "pillow>=11.0",
-    "opencv-python-headless>=4.10",
+    "pillow>=12.3",
+    # Exact pin (ADR-007 A6): Stage B alignment is bit-identical only within
+    # one OpenCV version; bump deliberately and re-run eval/run_eval.py.
+    # paddleocr 2.10 also needs opencv-python + opencv-contrib-python, and its
+    # albumentations dep needs the headless build. All three ship the same
+    # `cv2` package, so they are pinned to the SAME version: whichever one is
+    # installed last, cv2.__version__ is the pin. Unpinned, they would resolve
+    # to a different OpenCV and overwrite cv2. Bump all three together.
+    "opencv-python-headless==4.13.0.92",
+    "opencv-python==4.13.0.92",
+    "opencv-contrib-python==4.13.0.92",
     "tenacity>=9.0",
     "structlog>=24.4",
     "alembic>=1.14",
     "sqlalchemy[asyncio]>=2.0",
-    # OCR_ENABLED=false can be set to skip loading these at runtime
-    "paddleocr>=2.8",
+    # OCR_ENABLED=false can be set to skip loading these at runtime.
+    # Exact 2.x pin: app/pipeline/paddle_ocr.py uses the 2.x API (show_log,
+    # use_angle_cls, ocr(cls=True), nested-list results), which 3.x removed.
+    # 3.x would also force opencv-contrib-python==4.10.0.84 via paddlex.
+    "paddleocr==2.10.0",
     "paddlepaddle>=3.0",
+    # paddlepaddle imports setuptools at runtime without declaring it, and
+    # Python 3.12+ images/venvs no longer ship it. Floor excludes
+    # CVE-2025-47273 (fixed in 78.1.1).
+    "setuptools>=83",
 ]
 
 [project.optional-dependencies]
@@ -30,7 +46,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=83"]
 build-backend = "setuptools.build_meta"
 
 # Scope setuptools auto-discovery to the `app` package. Without this, flat

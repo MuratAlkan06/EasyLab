@@ -53,8 +53,8 @@ async def handle_process_batch(pool: asyncpg.Pool, job: dict) -> None:
     # Stage A — template generation (Gemini 2.5 Pro).
     await run_stage_a(pool, job)
 
-    # Stage B — region detection (Gemini 2.5 Pro). Returns a per-image,
-    # per-field box map that Stage C consumes.
+    # Stage B — region detection (deterministic reference alignment, ADR-007;
+    # no model calls). Returns a per-image, per-field box map that Stage C consumes.
     detected_boxes = await run_stage_b(pool, job)
 
     # Stage C — value extraction (Gemini 2.5 Flash). Writes one cells row

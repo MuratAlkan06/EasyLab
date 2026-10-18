@@ -1,0 +1,28 @@
+# Build context is apps/worker (see docker-compose.yml). Keep secrets and
+# local/dev artifacts out of the image layer created by `COPY . .`.
+
+# Secrets — runtime config comes from the platform env / compose env_file.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Virtualenvs and Python build/cache junk
+.venv
+**/__pycache__
+**/*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Offline eval harness: fixtures, outputs, private originals (may contain
+# people), and a runner that can call Gemini with the prod key outside the
+# worker's spend controls. Not needed at runtime.
+eval/
+
+# Tests are not needed at runtime
+tests
+
+# OS
+**/.DS_Store

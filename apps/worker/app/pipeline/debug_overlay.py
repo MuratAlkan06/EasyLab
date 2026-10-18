@@ -1,14 +1,14 @@
 """Render Stage B detection results onto a copy of the source image.
 
 The Stage B debug flag (``STAGE_B_DEBUG=true``) uses this to emit annotated
-JPEGs to Supabase Storage so we can eyeball what Gemini is actually boxing.
-It's the fastest path from "the cells table looks wrong" to "yep, the model
-boxed the AMP label again" without rebuilding the review UI.
+JPEGs to Supabase Storage so we can eyeball what the detector actually boxed.
+It's the fastest path from "the cells table looks wrong" to "yep, that box
+landed on the AMP label" without rebuilding the review UI.
 
 Color convention (matches the eventual review UI):
 
-* **green** — accepted Gemini detection
-* **red**   — rejected Gemini detection (low confidence or invalid geometry)
+* **green** — accepted detection
+* **red**   — rejected detection (low confidence or invalid geometry)
 * **blue**  — reference-box fallback
 * **yellow dashed** — the user's reference annotation (always drawn for context)
 
@@ -22,7 +22,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageDraw, ImageFont
+
+from app.pipeline.image_utils import open_upright
 
 OverlayKind = Literal["accepted", "rejected", "fallback", "reference"]
 
@@ -49,14 +51,14 @@ class OverlayBox:
 
 
 def render_overlay(image_bytes: bytes, boxes: Iterable[OverlayBox]) -> bytes:
-    """Return a JPEG with the boxes drawn on top of the original image.
+    """Return a JPEG with the boxes drawn on top of the upright original image.
 
-    The original is opened, copied (so the input bytes aren't mutated), drawn
-    on, and re-encoded as a moderate-quality JPEG suitable for browser viewing.
+    The original is decoded in upright space (EXIF orientation applied, the
+    space the normalized boxes live in), copied (so the input bytes aren't
+    mutated), drawn on, and re-encoded as a moderate-quality JPEG suitable for
+    browser viewing.
     """
-    with Image.open(io.BytesIO(image_bytes)) as src:
-        src.load()
-        canvas = src.convert("RGB")
+    canvas = open_upright(image_bytes).convert("RGB")
 
     draw = ImageDraw.Draw(canvas)
     width, height = canvas.size

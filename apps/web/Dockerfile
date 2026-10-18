@@ -1,7 +1,9 @@
 FROM node:23-alpine
 WORKDIR /app
 RUN npm install -g pnpm
-COPY package.json pnpm-lock.yaml .npmrc ./
+# The workspace-root pnpm-lock.yaml is authoritative but lies outside this
+# build context (./apps/web); this dev-only image resolves fresh from package.json.
+COPY package.json .npmrc ./
 RUN pnpm install
 COPY . .
 EXPOSE 3000

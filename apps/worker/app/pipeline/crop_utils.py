@@ -85,8 +85,8 @@ def box_iou(a: dict, b: dict) -> float:
 
     Boxes are ``{"x", "y", "width", "height"}``. Returns 0.0 when either box
     has zero area or the boxes are disjoint, 1.0 when they're identical.
-    Used for Stage B diagnostics to detect "Gemini is confident about the
-    wrong region" (high box_confidence + low IoU vs reference).
+    Used for Stage B diagnostics to detect "the detector is confident about
+    the wrong region" (high box_confidence + low IoU vs reference).
     """
     ax1, ay1 = a["x"], a["y"]
     ax2, ay2 = ax1 + a["width"], ay1 + a["height"]

@@ -8,7 +8,7 @@ Core concept: "Label one image once → AI learns what each region means → AI 
 
 ## Current Phase
 
-**v0.6.0 shipped 2026-05-13.** All planned phases complete; project is in maintenance + polish mode.
+**v0.6.0 shipped 2026-05-13; Phase 7 (deterministic Stage B detection) followed in 2026-10.** All planned phases complete; project is in maintenance + polish mode.
 
 1. ✅ Monorepo scaffold + docker-compose + Supabase migrations + fake job smoke test (no AI)
 2. ✅ Template generation — Gemini 2.5 Pro enriches annotations with semantic_description
@@ -16,18 +16,16 @@ Core concept: "Label one image once → AI learns what each region means → AI 
 4. ✅ Crops + confidence + needs_review — crop images shown in review table
 5. ✅ CSV export + cell_overrides survive re-runs
 6. ✅ Polish — circuit breaker, global token budget, per-workspace daily image quota, server-trusted size + mime, byte-decoded width/height, per-workspace token cap, quota UI, Supabase Realtime, vitest harness
-
-## Known limitations
-
-**Stage B detection accuracy** — Gemini boxes static device labels (printed "AMP", "VOLT") instead of live LCD displays. Visual-crop matching attempt is in `git stash`. See `project_phase3_detection_status.md` for the full diagnosis and three fallback options (per-field calls / Flash for detection / traditional template matching). Worth a Phase 7 design pass.
+7. ✅ Deterministic Stage B detection (ADR-007). Gemini detection is replaced by a classical CV aligner: AKAZE + seeded RANSAC homography + NCC verification, falling back to reference_box. Also: EXIF upright-space canonicalization and an offline eval harness (`apps/worker/eval/`). Mean IoU went 0.389 → 0.830 and hit-rate@0.5 38% → 96%; detection is now $0
 
 ---
 
 ## Stack (Final)
 
 - **Frontend:** Next.js 15, TypeScript, Tailwind CSS, react-konva, shadcn/ui, Sonner, @tanstack/react-table, @tanstack/react-virtual, @tanstack/react-query, Zod
-- **Backend:** FastAPI + asyncio on Fly.io (persistent VM — not serverless), Pydantic v2, asyncpg, supabase-py, Pillow, tenacity, structlog
-- **AI:** Gemini 2.5 Pro (template gen + detection), Gemini 2.5 Flash (value extraction), PaddleOCR (Stage C parallel reader)
+- **Backend:** FastAPI + asyncio on Fly.io (persistent VM — not serverless), Pydantic v2, asyncpg, supabase-py, Pillow, OpenCV, tenacity, structlog
+- **AI:** Gemini 2.5 Pro (template gen only), Gemini 2.5 Flash (value extraction), PaddleOCR (Stage C parallel reader)
+- **Detection (Stage B):** classical CV aligner (`app/pipeline/align.py`, OpenCV pinned exactly), no model call
 - **Data:** Supabase Postgres + Supabase Storage (private bucket `easylab`), Alembic migrations
 - **Export:** CSV only in MVP (XLSX deferred)
 
@@ -54,7 +52,7 @@ Storage paths: `projects/{project_id}/originals|thumbs|crops/{image_id}`
 - Reference image selected from uploaded set (inline in upload flow)
 - Rectangular annotation (react-konva), max 20 fields
 - Semantic template: reference_box + semantic_description per field
-- Batch AI detection + extraction with confidence scores + needs_review flags
+- Batch detection + AI extraction with confidence scores + needs_review flags
 - Crop images saved and shown next to values in review table (primary trust mechanism)
 - Review table: inline editing (double-click or Enter), cell overrides survive re-runs
 - CSV export, per-workspace daily quota, global token budget
@@ -88,5 +86,6 @@ Storage paths: `projects/{project_id}/originals|thumbs|crops/{image_id}`
 - `docs/database-schema.md` — open when writing migrations, DB queries, adding columns, or understanding table relationships and state machines
 - `docs/api-contract.md` — open when implementing any API route: request/response shape, validation rules, error codes
 - `docs/migrations-strategy.md` — open before writing or running any Alembic migration
-- `docs/ai-pipeline.md` — open when implementing any Gemini call, PaddleOCR integration, confidence scoring, preprocessing, or circuit breaker logic
+- `docs/ai-pipeline.md` — open when implementing any Gemini call, Stage B alignment, PaddleOCR integration, confidence scoring, preprocessing, or circuit breaker logic
+- `apps/worker/eval/README.md` — open before changing Stage B detection; re-run `eval/run_eval.py` and only retune thresholds on its evidence
 - `docs/ui-spec.md` — open when implementing any frontend page, component, canvas interaction, or review table behavior

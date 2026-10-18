@@ -2,8 +2,13 @@
 
 Inputs:
   * Every non-reference image already uploaded for the project.
-  * `template_fields` rows (id, field_name, semantic_description) populated
-    by Stage A.
+  * The project's reference image and the `template_fields` rows (id,
+    field_name, reference_box) the user annotated on it.
+
+Detection is deterministic reference-box transfer (ADR-007): the reference is
+downloaded once per job and its features precomputed, then each image is
+aligned to it by ``app.pipeline.align`` (homography + NCC, CPU only, run via
+``asyncio.to_thread``). No model calls.
 
 Outputs:
   * For each (image, field) pair where the box is missing or rejected, a
@@ -19,7 +24,6 @@ Runs after Stage A inside `process_batch`. Stage C consumes the returned map.
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import time
 from typing import Any
@@ -27,28 +31,15 @@ from uuid import UUID
 
 import asyncpg
 import structlog
-from PIL import Image
 from supabase import create_client
-from tenacity import (
-    AsyncRetrying,
-    RetryError,
-    stop_after_attempt,
-    wait_fixed,
-)
 
+from app.pipeline.align import METHOD_FALLBACK, ReferenceFeatures, align_target, prepare_reference
 from app.pipeline.crop_utils import box_iou, is_box_valid
 from app.pipeline.debug_overlay import OverlayBox, render_overlay
-from app.pipeline.gemini import call_stage_b, get_client
-from app.pipeline.image_utils import preprocess_for_stage_b
-from app.pipeline.schemas import DetectionResponse
+from app.pipeline.image_utils import upright_size
 from app.settings import settings
 
 log = structlog.get_logger()
-
-# Retry timing for the Gemini call. Two attempts total: an initial call and
-# one retry after a short pause (mirrors Stage A behaviour).
-_RETRY_WAIT_SECONDS = 2.0
-_MAX_ATTEMPTS = 2
 
 # Detections below this box_confidence are treated as too uncertain to crop.
 # The reference-box fallback is tried first; failing that, a failed cell is written.
@@ -64,46 +55,10 @@ _REFERENCE_BOX_CONFIDENCE = 0.55
 _HEARTBEAT_INTERVAL_SECONDS = 5.0
 
 
-def convert_box_to_normalized(box: list[int]) -> dict[str, float]:
-    """Convert a Gemini ``[ymin, xmin, ymax, xmax]`` 0..1000 box to normalized 0..1.
-
-    Always clamps to ``[0, 1]`` so out-of-range output from the model never
-    propagates downstream. Negative widths/heights from inverted boxes also
-    clamp to 0; the caller is expected to reject such boxes via ``is_box_valid``.
-    """
-    ymin, xmin, ymax, xmax = box
-    x = max(0.0, min(1.0, xmin / 1000.0))
-    y = max(0.0, min(1.0, ymin / 1000.0))
-    width = max(0.0, min(1.0, (xmax - xmin) / 1000.0))
-    height = max(0.0, min(1.0, (ymax - ymin) / 1000.0))
-    return {"x": x, "y": y, "width": width, "height": height}
-
-
-async def _call_with_retry(
-    client, model_name: str, image_bytes: bytes, fields: list[dict]
-) -> DetectionResponse:
-    """Call Stage B and validate; retry once on any failure (tenacity).
-
-    Raises the underlying exception if both attempts fail so the caller can
-    decide how to mark the affected image (all fields → failed cells).
-    """
-    try:
-        async for attempt in AsyncRetrying(
-            stop=stop_after_attempt(_MAX_ATTEMPTS),
-            wait=wait_fixed(_RETRY_WAIT_SECONDS),
-            reraise=True,
-        ):
-            with attempt:
-                return await call_stage_b(client, model_name, image_bytes, fields)
-    except RetryError as exc:  # defensive: reraise=True should already unwrap
-        raise exc.last_attempt.exception() from exc
-    raise RuntimeError("unreachable: AsyncRetrying exited without yielding")
-
-
 async def _load_template_fields(pool: asyncpg.Pool, project_id) -> list[dict]:
     rows = await pool.fetch(
         """
-        SELECT id, field_name, semantic_description, reference_box
+        SELECT id, field_name, reference_box
         FROM template_fields
         WHERE project_id = $1
         ORDER BY display_order
@@ -119,7 +74,6 @@ async def _load_template_fields(pool: asyncpg.Pool, project_id) -> list[dict]:
             {
                 "id": r["id"],
                 "field_name": r["field_name"],
-                "semantic_description": r["semantic_description"],
                 "reference_box": box,
             }
         )
@@ -150,6 +104,45 @@ async def _load_image_tasks(pool: asyncpg.Pool, job_id) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+async def _load_reference_storage_path(pool: asyncpg.Pool, project_id) -> str:
+    row = await pool.fetchrow(
+        """
+        SELECT i.storage_path
+        FROM projects p
+        JOIN images i ON i.id = p.reference_image_id
+        WHERE p.id = $1
+        """,
+        project_id,
+    )
+    if row is None:
+        raise RuntimeError(f"Stage B: no reference image set for project {project_id}")
+    return row["storage_path"]
+
+
+async def _prepare_reference(
+    pool: asyncpg.Pool, *, job_id: UUID, project_id: UUID, fields: list[dict]
+) -> ReferenceFeatures:
+    """Download the reference image once per job and precompute its features.
+
+    Only the working-resolution grayscale and the keypoints/descriptors
+    survive; the downloaded bytes and the full-resolution decode are released
+    when this returns. A failure here propagates, like Stage A's reference
+    download, so the worker re-queues the job.
+    """
+    storage_path = await _load_reference_storage_path(pool, project_id)
+    ref_bytes = await asyncio.to_thread(_download_image_bytes, storage_path)
+    boxes = {f["id"]: f.get("reference_box") for f in fields}
+    started = time.perf_counter()
+    reference = await asyncio.to_thread(prepare_reference, ref_bytes, boxes)
+    log.info(
+        "stage_b.reference_prepared",
+        job_id=str(job_id),
+        features=len(reference.points),
+        prepare_ms=round((time.perf_counter() - started) * 1000, 1),
+    )
+    return reference
+
+
 def _download_image_bytes(storage_path: str) -> bytes:
     """Download an image from Supabase Storage (sync supabase-py)."""
     supabase = create_client(
@@ -177,10 +170,13 @@ def _upload_debug_overlay(storage_path: str, jpeg_bytes: bytes) -> None:
 
 
 def _open_dimensions(img_bytes: bytes) -> tuple[int, int]:
-    """Return (width_px, height_px) for the raw image bytes."""
-    with Image.open(io.BytesIO(img_bytes)) as img:
-        img.load()
-        return img.size  # (width, height)
+    """Return (width_px, height_px) of the UPRIGHT (EXIF-applied) image.
+
+    Boxes are normalized against the upright image (the detector and the
+    annotation UI both see it), so validation, crops and the images row
+    backfill must use upright dimensions too.
+    """
+    return upright_size(img_bytes)
 
 
 async def _write_failed_cell(
@@ -198,7 +194,7 @@ async def _write_failed_cell(
     Uses the (job_id, image_id, field_id) unique key so retries within the
     same job are idempotent.
     """
-    model_versions = json.dumps({"detector": settings.gemini_detection_model})
+    model_versions = json.dumps({"detector": settings.detector_version})
     await pool.execute(
         """
         INSERT INTO cells (
@@ -232,7 +228,7 @@ async def _process_image(
     job: dict,
     fields: list[dict],
     task: dict,
-    client,
+    reference: ReferenceFeatures,
     detected: dict[UUID, dict[UUID, dict[str, Any]]],
     progress_lock: asyncio.Lock,
 ) -> None:
@@ -259,11 +255,10 @@ async def _process_image(
         task["task_id"],
     )
 
-    # Download + measure original dimensions + preprocess for Gemini.
+    # Download + measure upright full-resolution dimensions.
     try:
         raw_bytes = await asyncio.to_thread(_download_image_bytes, storage_path)
         width_px, height_px = await asyncio.to_thread(_open_dimensions, raw_bytes)
-        image_bytes = await asyncio.to_thread(preprocess_for_stage_b, raw_bytes)
     except Exception as exc:  # noqa: BLE001
         log.error(
             "stage_b.image.preprocess_failed",
@@ -309,26 +304,25 @@ async def _process_image(
     # Declare before the try so the except block can populate it directly.
     image_detected: dict[UUID, dict[str, Any]] = {}
 
-    # Call Gemini with retry. On total failure, try reference-box fallback per
-    # field; write a failed cell only when no reference box is available either.
-    parsed = None
+    # Align against the reference (CPU-bound, off the event loop). On failure,
+    # try reference-box fallback per field; write a failed cell only when no
+    # reference box is available either.
+    aligned = None
     try:
-        parsed = await _call_with_retry(
-            client,
-            settings.gemini_detection_model,
-            image_bytes,
-            [
-                {
-                    "field_name": f["field_name"],
-                    "semantic_description": f["semantic_description"],
-                    "reference_box": f.get("reference_box"),
-                }
-                for f in fields
-            ],
+        started = time.perf_counter()
+        aligned = await asyncio.to_thread(align_target, reference, raw_bytes)
+        log.info(
+            "stage_b.image.aligned",
+            job_id=str(job_id),
+            image_id=str(image_id),
+            align_ms=round((time.perf_counter() - started) * 1000, 1),
+            h_status=aligned.h_status,
+            matches=aligned.matches,
+            inliers=aligned.inliers,
         )
     except Exception as exc:  # noqa: BLE001
         log.error(
-            "stage_b.image.gemini_failed",
+            "stage_b.image.align_failed",
             job_id=str(job_id),
             image_id=str(image_id),
             error=str(exc),
@@ -341,7 +335,7 @@ async def _process_image(
                     job_id=str(job_id),
                     image_id=str(image_id),
                     field_name=field["field_name"],
-                    reason="gemini_error",
+                    reason="align_error",
                 )
                 image_detected[field["id"]] = {
                     "box": ref_box,
@@ -369,9 +363,9 @@ async def _process_image(
                 str(exc)[:500],
             )
             return
-        # parsed stays None — skip the per-field Gemini loop below.
+        # aligned stays None — skip the per-field loop below.
 
-    # If Gemini succeeded, process each field: apply confidence threshold and
+    # If alignment succeeded, process each field: apply confidence threshold and
     # fall back to the reference box when the detection is absent or unreliable.
     #
     # ``overlay_boxes`` collects per-field outcomes for STAGE_B_DEBUG so we can
@@ -379,11 +373,9 @@ async def _process_image(
     # the reference annotation goes underneath (dashed), then the accepted/
     # rejected/fallback box on top.
     overlay_boxes: list[OverlayBox] = []
-    if parsed is not None:
-        by_name = {df.field_name: df for df in parsed.fields}
-
+    if aligned is not None:
         for field in fields:
-            df = by_name.get(field["field_name"])
+            det = aligned.fields.get(field["id"])
             ref_box = field.get("reference_box")
 
             accepted_box: dict | None = None
@@ -391,49 +383,48 @@ async def _process_image(
             failure_reason: str = "field_not_visible"
             failure_conf: float = 0.0
 
-            # Diagnostics: raw Gemini box (if any) + IoU vs the user's
-            # annotation. These are cheap and run regardless of the debug
-            # flag because the IoU is useful in normal logs too — it makes
-            # the "Gemini is confident about the wrong region" failure mode
-            # legible without needing the overlay images.
+            # Diagnostics: the detector's own box (None when the aligner fell
+            # back) + IoU vs the user's annotation. Logged for every field
+            # regardless of the debug flag: method + IoU are the production
+            # fallback-rate telemetry (ADR-007 revisit trigger).
             raw_box: dict | None = None
             iou_vs_ref: float | None = None
-            if df is not None and df.box is not None:
-                raw_box = convert_box_to_normalized(df.box)
-                if ref_box:
-                    iou_vs_ref = round(box_iou(raw_box, ref_box), 4)
+            if det is not None:
+                if det.method != METHOD_FALLBACK:
+                    raw_box = det.box
+                    if ref_box:
+                        iou_vs_ref = round(box_iou(raw_box, ref_box), 4)
                 log.info(
-                    "stage_b.gemini_raw",
+                    "stage_b.detector_raw",
                     job_id=str(job_id),
                     image_id=str(image_id),
                     field_name=field["field_name"],
-                    found=bool(df.found),
-                    box_confidence=float(df.box_confidence or 0.0),
-                    gemini_box_raw=df.box,
+                    found=raw_box is not None,
+                    method=det.method,
+                    box_confidence=det.box_confidence,
+                    detector_box=raw_box,
+                    ncc_peak=det.ncc_peak,
                     box_iou_vs_reference=iou_vs_ref,
                 )
 
-            if df is None:
-                # R1: field name missing from response entirely.
+            if det is None:
+                # R1: no reference box to transfer for this field.
                 pass
-            elif not df.found or df.box is None:
-                # R2: Gemini explicitly did not find the field.
-                failure_conf = float(df.box_confidence or 0.0)
-            elif (df.box_confidence or 0.0) < _MIN_BOX_CONFIDENCE:
+            elif raw_box is None:
+                # R2: no alignment rung located the field.
+                pass
+            elif det.box_confidence < _MIN_BOX_CONFIDENCE:
                 # R3: detected but below confidence threshold — crop would be unreliable.
                 failure_reason = "low_confidence"
-                failure_conf = float(df.box_confidence or 0.0)
+                failure_conf = det.box_confidence
+            elif not is_box_valid(raw_box, width_px, height_px):
+                # R4: box geometry rejected (too small, degenerate, full-image).
+                failure_conf = det.box_confidence
             else:
-                # raw_box was already computed above for the diagnostic log.
-                assert raw_box is not None  # narrowed by the elifs
-                if not is_box_valid(raw_box, width_px, height_px):
-                    # R4: box geometry rejected (too small, degenerate, full-image).
-                    failure_conf = float(df.box_confidence or 0.0)
-                else:
-                    accepted_box = raw_box
-                    accepted_conf = float(df.box_confidence or 0.0)
+                accepted_box = raw_box
+                accepted_conf = det.box_confidence
 
-            # Fallback: use the annotated reference box when Gemini detection failed.
+            # Fallback: use the annotated reference box when alignment failed.
             used_fallback = False
             if accepted_box is None and ref_box and is_box_valid(ref_box, width_px, height_px):
                 log.info(
@@ -449,7 +440,7 @@ async def _process_image(
 
             # Collect overlay entries for the debug-flag JPEG. Always include
             # the user's reference annotation when present so reviewers can
-            # see what the model was supposed to find.
+            # see what the detector was supposed to find.
             if settings.stage_b_debug:
                 if ref_box:
                     overlay_boxes.append(
@@ -596,7 +587,7 @@ async def run_stage_b(pool: asyncpg.Pool, job: dict) -> dict[UUID, dict[UUID, di
         log.info("stage_b.no_tasks", job_id=str(job_id))
         return {}
 
-    client = get_client()
+    reference = await _prepare_reference(pool, job_id=job_id, project_id=project_id, fields=fields)
     semaphore = asyncio.Semaphore(settings.image_concurrency)
     progress_lock = asyncio.Lock()
     detected: dict[UUID, dict[UUID, dict[str, Any]]] = {}
@@ -608,7 +599,7 @@ async def run_stage_b(pool: asyncpg.Pool, job: dict) -> dict[UUID, dict[UUID, di
                 job=job,
                 fields=fields,
                 task=task,
-                client=client,
+                reference=reference,
                 detected=detected,
                 progress_lock=progress_lock,
             )

@@ -22,26 +22,6 @@ class TemplateGenerationResponse(BaseModel):
     fields: list[FieldTemplate]
 
 
-class DetectedField(BaseModel):
-    """Per-field detection result returned by Stage B.
-
-    `box` is Gemini-native ``[ymin, xmin, ymax, xmax]`` in 0..1000 space.
-    Always ``None`` when ``found`` is False; the worker also defensively
-    treats a missing/None box on ``found=True`` as not-found.
-    """
-
-    field_name: str
-    found: bool
-    box: list[int] | None = None
-    box_confidence: float = 0.0
-
-
-class DetectionResponse(BaseModel):
-    """Stage B response: one DetectedField per template field, in input order."""
-
-    fields: list[DetectedField]
-
-
 class ExtractionResponse(BaseModel):
     """Stage C response: per-crop value extraction from Gemini Flash.
 

@@ -40,9 +40,9 @@ def _install_fake_paddleocr(
 ) -> MagicMock:
     """Inject a fake ``paddleocr`` module so ``run_ocr``'s lazy import succeeds.
 
-    Also installs a minimal ``numpy`` shim if numpy isn't on the test path —
-    we don't actually need its array semantics, only that ``np.array(img)``
-    returns something the fake OCR will accept.
+    Also shadows ``numpy`` (for this test only) with a passthrough shim — we
+    don't need its array semantics, only that ``np.array(img)`` hands the PIL
+    image to the fake OCR so tests can inspect it.
     """
     fake_mod = types.ModuleType("paddleocr")
     instance = MagicMock()
@@ -54,12 +54,13 @@ def _install_fake_paddleocr(
     fake_mod.PaddleOCR = fake_cls
     monkeypatch.setitem(sys.modules, "paddleocr", fake_mod)
 
-    # numpy is a real transitive dep for paddle, but the test env may not have
-    # it installed — only the lazy import path inside run_ocr touches numpy.
-    if "numpy" not in sys.modules:
-        fake_np = types.ModuleType("numpy")
-        fake_np.array = lambda obj: obj  # passthrough is fine for the mock
-        monkeypatch.setitem(sys.modules, "numpy", fake_np)
+    # Shadow numpy unconditionally: other modules (cv2 via the Stage B aligner)
+    # import the real one during collection, and real ``np.array`` would turn
+    # the PIL image into an ndarray. run_ocr imports numpy lazily, so it picks
+    # up the shim; monkeypatch restores the real module afterwards.
+    fake_np = types.ModuleType("numpy")
+    fake_np.array = lambda obj: obj  # passthrough is fine for the mock
+    monkeypatch.setitem(sys.modules, "numpy", fake_np)
 
     return fake_cls
 

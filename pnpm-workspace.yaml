@@ -1,2 +1,19 @@
 packages:
   - 'apps/*'
+
+# Security floor for ws (GHSA memory-exhaustion DoS, fixed in 8.21.0), pulled in
+# via @supabase/supabase-js -> @supabase/realtime-js (declares ws ^8.18.2).
+# Capped at ^8 to stay inside realtime-js's declared range. Remove once
+# supabase-js is upgraded past 2.105.x (realtime-js >=2.105.4 drops ws; that
+# line needs Node >=22 for server-side createClient, and CI runs Node 20).
+#
+# browserslist (GHSA-c83g-rgw3-j3cx, GHSA-73wf-gq98-2v4g; fixed in 4.28.7) and
+# source-map-js (GHSA-68fv-2mgg-jv7q; fixed in 1.2.2) are build-time packages
+# locked at vulnerable versions inside next's tree (styled-jsx > @babel/core >
+# @babel/helper-compilation-targets declares browserslist ^4.24.0; postcss
+# declares source-map-js ^1.2.1). Floors stay inside those declared ranges.
+# Remove once next's own tree resolves to patched versions.
+overrides:
+  ws: ^8.21.0
+  browserslist: ^4.28.7
+  source-map-js: ^1.2.2

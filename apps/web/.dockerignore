@@ -1,2 +1,7 @@
 node_modules
 .next
+
+# Secrets — the Dockerfile's `COPY . .` would otherwise bake .env.local into
+# the image layer. Runtime config comes from compose env_file / platform env.
+.env*
+**/.env*

@@ -219,11 +219,11 @@
       <div class="step-num"><div class="circle ai">6</div><div class="line"></div></div>
       <div class="step-card ai">
         <h2>AI pipeline runs</h2>
-        <div class="who">FastAPI + Gemini + PaddleOCR</div>
-        <div class="desc">Stage A: Gemini 2.5 Pro enriches the template (semantic descriptions). Stage B: detects regions in each non-reference image. Stage C: Gemini Flash + PaddleOCR read values from each crop. Each cell row is written with confidence + status.</div>
+        <div class="who">FastAPI + Gemini + OpenCV + PaddleOCR</div>
+        <div class="desc">Stage A: Gemini 2.5 Pro enriches the template (semantic descriptions). Stage B: a deterministic aligner (AKAZE + RANSAC homography + NCC, no model call) carries each reference box onto every non-reference image. Stage C: Gemini Flash + PaddleOCR read values from each crop. Each cell row is written with confidence + status.</div>
         <div class="systems">
           <span class="pill pill-green">Stage A · Pro</span>
-          <span class="pill pill-green">Stage B · Pro</span>
+          <span class="pill pill-green">Stage B · aligner · $0</span>
           <span class="pill pill-green">Stage C · Flash + OCR</span>
           <span class="pill pill-orange">cells, crops written</span>
         </div>

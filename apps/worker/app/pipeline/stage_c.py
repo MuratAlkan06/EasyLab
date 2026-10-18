@@ -22,7 +22,6 @@ the reconciliation falls through to the Flash-only path
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import time
 from typing import Any
@@ -42,6 +41,7 @@ from tenacity import (
 from app.pipeline.confidence import compute_cell_status, compute_combined_confidence
 from app.pipeline.crop_utils import compute_crop_rect, crop_and_encode
 from app.pipeline.gemini import call_stage_c, get_client
+from app.pipeline.image_utils import open_upright
 from app.pipeline.paddle_ocr import (
     OCR_FAIL_CONFIDENCE,
     OCR_SEMAPHORE,
@@ -54,7 +54,7 @@ from app.settings import settings
 
 log = structlog.get_logger()
 
-# Two attempts total for the Gemini Flash extraction call (mirrors Stage B).
+# Two attempts total for the Gemini Flash extraction call (same policy as Stage A).
 _RETRY_WAIT_SECONDS = 2.0
 _MAX_ATTEMPTS = 2
 
@@ -149,10 +149,13 @@ def _upload_crop_bytes(storage_path: str, crop_bytes: bytes) -> None:
 
 
 def _open_image(img_bytes: bytes) -> Image.Image:
-    """Open and load image from raw bytes for cropping."""
-    img = Image.open(io.BytesIO(img_bytes))
-    img.load()
-    return img
+    """Decode the UPRIGHT (EXIF-applied) full-resolution image for cropping.
+
+    Stage B boxes and dimensions are in upright space, so the crop canvas must
+    be too; the raw stored pixel grid would put crops on the wrong region for
+    rotated (orientation 5-8) phone photos.
+    """
+    return open_upright(img_bytes)
 
 
 def _validate_extraction(
@@ -202,7 +205,7 @@ async def _write_cell(
     """Upsert a cells row (one row per (job, image, field))."""
     model_versions = json.dumps(
         {
-            "detector": settings.gemini_detection_model,
+            "detector": settings.detector_version,
             "extractor": settings.gemini_extraction_model,
         }
     )

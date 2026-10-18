@@ -205,8 +205,8 @@ Uses Supabase Storage `createSignedUploadUrl` per file.
   "files": [
     {
       "filename":  string,   // required; original filename
-      "mime_type": string,   // required; must be image/jpeg, image/png, image/webp, image/tiff
-      "size_bytes": int      // required; > 0, <= 52_428_800 (50 MB)
+      "mime_type": string,   // required; must be image/jpeg or image/png
+      "size_bytes": int      // required; > 0, <= 20_971_520 (20 MB)
     }
   ]
 }
@@ -250,7 +250,7 @@ Called by the client after each image upload completes (Supabase Storage SDK sig
 {
   "size_bytes": int,   // optional; actual bytes received
   "width_px":  int,   // optional; image dimensions if decoded client-side
-  "height_px": int    // optional
+  "height_px": int    // optional; server stores upright (EXIF-applied) dims
 }
 ```
 
@@ -735,8 +735,9 @@ Wakes the job worker. Called by Next.js after inserting a job. The worker polls 
 ### POST /api/projects/:id/upload-urls
 - `files`: array, 1–200 entries
 - `files[].filename`: string, required, non-empty
-- `files[].mime_type`: one of `image/jpeg`, `image/png`, `image/webp`, `image/tiff`
-- `files[].size_bytes`: integer, 1 – 52_428_800 (50 MB)
+- `files[].mime_type`: one of `image/jpeg`, `image/png`
+- `files[].size_bytes`: integer, 1 – 20_971_520 (20 MB)
+- At confirm time the server re-validates: the decoded image type (parsed from bytes, JPEG/PNG parsers only) must match the stored mime, else 422
 
 ### POST /api/projects/:id/images/:imageId/confirm
 - All fields optional; if provided: size_bytes > 0, width_px > 0, height_px > 0

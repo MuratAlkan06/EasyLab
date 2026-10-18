@@ -163,7 +163,7 @@
 </head>
 <body>
   <h1>EasyLab — AI Extraction Pipeline</h1>
-  <div class="subtitle">3 stages running on FastAPI · Gemini 2.5 Pro + Flash + PaddleOCR</div>
+  <div class="subtitle">3 stages running on FastAPI · Gemini 2.5 Pro (A) · deterministic OpenCV aligner (B) · Flash + PaddleOCR (C)</div>
 
   <div class="pipeline">
 
@@ -203,22 +203,23 @@
 
     <div class="stage b">
       <div class="stage-header">
-        <div class="stage-title">Stage B — Region Detection</div>
-        <div class="stage-tag tag-b">Gemini 2.5 Pro · per image</div>
+        <div class="stage-title">Stage B — Region Detection (deterministic aligner)</div>
+        <div class="stage-tag tag-b">OpenCV · no model call · $0 · per image</div>
       </div>
+      <div class="col-content">AKAZE features + seeded RANSAC homography (sanity-gated) carry each <code>reference_box</code> onto the image; NCC template matching verifies it.</div>
       <div class="stage-grid">
         <div class="col">
           <div class="col-label">Input</div>
-          <div class="col-content">Image (1568px) + all fields with <code>semantic_description</code></div>
+          <div class="col-content">Image + reference image (both EXIF-upright, 1024px grayscale) + <code>reference_box</code> per field</div>
         </div>
         <div class="col">
           <div class="col-label">Output</div>
-          <div class="col-content"><code>detected_box</code> [ymin,xmin,ymax,xmax] in 0..1000 → normalized 0..1<br/>+ <code>box_confidence</code> per field</div>
+          <div class="col-content"><code>detected_box</code> normalized 0..1 + <code>box_confidence</code> per field<br/>0.93 H+NCC · 0.85 H · 0.70 NCC rescue · 0.55 fallback</div>
         </div>
       </div>
     </div>
 
-    <div class="branch">↳ found = false → write failed cell, skip Stage C</div>
+    <div class="branch">↳ no usable box (and no valid reference_box) → write failed cell, skip Stage C</div>
 
     <div class="arrow">
       <svg viewBox="0 0 28 32"><line x1="14" y1="0" x2="14" y2="22" stroke="#64748b" stroke-width="1.5"/><polygon points="9,22 14,32 19,22" fill="#64748b"/></svg>
@@ -267,7 +268,7 @@
     <div class="legend-row"><strong>Coordinates</strong><span>Always normalized 0..1 against original dimensions. Never display pixels.</span></div>
     <div class="legend-row"><strong>Concurrency</strong><span>2 jobs · 5 images per job · 10 max concurrent Gemini calls.</span></div>
     <div class="legend-row"><strong>Circuit breaker</strong><span>5 consecutive 5xx → pause job for 60s. 429 → honor <code>retry-after</code> header.</span></div>
-    <div class="legend-row"><strong>Cost</strong><span>~$0.40 per 50 images × 4 fields. ~50s end-to-end.</span></div>
+    <div class="legend-row"><strong>Cost</strong><span>~$0.08 per 50 images × 4 fields (A ~$0.01 · B $0 · C ~$0.07), down from ~$0.40 with Gemini detection.</span></div>
   </div>
 </body>
 </html>
