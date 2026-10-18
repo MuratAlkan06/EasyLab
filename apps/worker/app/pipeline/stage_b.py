@@ -36,7 +36,8 @@ from tenacity import (
     wait_fixed,
 )
 
-from app.pipeline.crop_utils import is_box_valid
+from app.pipeline.crop_utils import box_iou, is_box_valid
+from app.pipeline.debug_overlay import OverlayBox, render_overlay
 from app.pipeline.gemini import call_stage_b, get_client
 from app.pipeline.image_utils import preprocess_for_stage_b
 from app.pipeline.schemas import DetectionResponse
@@ -156,6 +157,23 @@ def _download_image_bytes(storage_path: str) -> bytes:
         settings.supabase_service_role_key,
     )
     return supabase.storage.from_(settings.supabase_storage_bucket).download(storage_path)
+
+
+def _upload_debug_overlay(storage_path: str, jpeg_bytes: bytes) -> None:
+    """Upload a STAGE_B_DEBUG overlay JPEG. Sync, called from a thread.
+
+    Upserts so re-running a job within the same debug-storage window doesn't
+    error on 'already exists'.
+    """
+    supabase = create_client(
+        settings.supabase_url,
+        settings.supabase_service_role_key,
+    )
+    supabase.storage.from_(settings.supabase_storage_bucket).upload(
+        path=storage_path,
+        file=jpeg_bytes,
+        file_options={"content-type": "image/jpeg", "upsert": "true"},
+    )
 
 
 def _open_dimensions(img_bytes: bytes) -> tuple[int, int]:
@@ -355,6 +373,12 @@ async def _process_image(
 
     # If Gemini succeeded, process each field: apply confidence threshold and
     # fall back to the reference box when the detection is absent or unreliable.
+    #
+    # ``overlay_boxes`` collects per-field outcomes for STAGE_B_DEBUG so we can
+    # render an annotated JPEG after the loop. Order matters for visual reading:
+    # the reference annotation goes underneath (dashed), then the accepted/
+    # rejected/fallback box on top.
+    overlay_boxes: list[OverlayBox] = []
     if parsed is not None:
         by_name = {df.field_name: df for df in parsed.fields}
 
@@ -367,6 +391,28 @@ async def _process_image(
             failure_reason: str = "field_not_visible"
             failure_conf: float = 0.0
 
+            # Diagnostics: raw Gemini box (if any) + IoU vs the user's
+            # annotation. These are cheap and run regardless of the debug
+            # flag because the IoU is useful in normal logs too — it makes
+            # the "Gemini is confident about the wrong region" failure mode
+            # legible without needing the overlay images.
+            raw_box: dict | None = None
+            iou_vs_ref: float | None = None
+            if df is not None and df.box is not None:
+                raw_box = convert_box_to_normalized(df.box)
+                if ref_box:
+                    iou_vs_ref = round(box_iou(raw_box, ref_box), 4)
+                log.info(
+                    "stage_b.gemini_raw",
+                    job_id=str(job_id),
+                    image_id=str(image_id),
+                    field_name=field["field_name"],
+                    found=bool(df.found),
+                    box_confidence=float(df.box_confidence or 0.0),
+                    gemini_box_raw=df.box,
+                    box_iou_vs_reference=iou_vs_ref,
+                )
+
             if df is None:
                 # R1: field name missing from response entirely.
                 pass
@@ -378,15 +424,17 @@ async def _process_image(
                 failure_reason = "low_confidence"
                 failure_conf = float(df.box_confidence or 0.0)
             else:
-                box = convert_box_to_normalized(df.box)
-                if not is_box_valid(box, width_px, height_px):
+                # raw_box was already computed above for the diagnostic log.
+                assert raw_box is not None  # narrowed by the elifs
+                if not is_box_valid(raw_box, width_px, height_px):
                     # R4: box geometry rejected (too small, degenerate, full-image).
                     failure_conf = float(df.box_confidence or 0.0)
                 else:
-                    accepted_box = box
+                    accepted_box = raw_box
                     accepted_conf = float(df.box_confidence or 0.0)
 
             # Fallback: use the annotated reference box when Gemini detection failed.
+            used_fallback = False
             if accepted_box is None and ref_box and is_box_valid(ref_box, width_px, height_px):
                 log.info(
                     "stage_b.reference_fallback",
@@ -397,6 +445,47 @@ async def _process_image(
                 )
                 accepted_box = ref_box
                 accepted_conf = _REFERENCE_BOX_CONFIDENCE
+                used_fallback = True
+
+            # Collect overlay entries for the debug-flag JPEG. Always include
+            # the user's reference annotation when present so reviewers can
+            # see what the model was supposed to find.
+            if settings.stage_b_debug:
+                if ref_box:
+                    overlay_boxes.append(
+                        OverlayBox(
+                            box=ref_box,
+                            label=f"{field['field_name']} (ref)",
+                            kind="reference",
+                        )
+                    )
+                if used_fallback and accepted_box is not None:
+                    overlay_boxes.append(
+                        OverlayBox(
+                            box=accepted_box,
+                            label=f"{field['field_name']} fallback",
+                            kind="fallback",
+                            confidence=accepted_conf,
+                        )
+                    )
+                elif accepted_box is not None:
+                    overlay_boxes.append(
+                        OverlayBox(
+                            box=accepted_box,
+                            label=field["field_name"],
+                            kind="accepted",
+                            confidence=accepted_conf,
+                        )
+                    )
+                elif raw_box is not None:
+                    overlay_boxes.append(
+                        OverlayBox(
+                            box=raw_box,
+                            label=f"{field['field_name']} rejected",
+                            kind="rejected",
+                            confidence=failure_conf,
+                        )
+                    )
 
             if accepted_box is not None:
                 image_detected[field["id"]] = {
@@ -415,6 +504,27 @@ async def _process_image(
                     failure_reason=failure_reason,
                     box_confidence=failure_conf,
                 )
+
+    # Emit the overlay JPEG once per image. Best-effort: a Storage outage on
+    # the debug path must not fail Stage B itself.
+    if settings.stage_b_debug and overlay_boxes:
+        try:
+            overlay_bytes = await asyncio.to_thread(render_overlay, raw_bytes, overlay_boxes)
+            debug_path = f"projects/{project_id}/debug/{job_id}/{image_id}.jpg"
+            await asyncio.to_thread(_upload_debug_overlay, debug_path, overlay_bytes)
+            log.info(
+                "stage_b.debug_overlay_uploaded",
+                job_id=str(job_id),
+                image_id=str(image_id),
+                storage_path=debug_path,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "stage_b.debug_overlay_failed",
+                job_id=str(job_id),
+                image_id=str(image_id),
+                error=str(exc),
+            )
 
     if image_detected:
         detected[image_id] = image_detected

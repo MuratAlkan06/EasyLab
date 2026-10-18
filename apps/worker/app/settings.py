@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # loading the paddle stack at runtime (e.g. CI, local dev without OCR).
     ocr_enabled: bool = True
 
+    # Stage B diagnostics. When true, each processed image gets:
+    #   * per-field structlog events with raw Gemini box coords + IoU vs the
+    #     user's reference_box
+    #   * a JPEG overlay written to Supabase Storage at
+    #     ``projects/{project_id}/debug/{job_id}/{image_id}.jpg``
+    # Off by default — flip on when investigating detection bugs.
+    stage_b_debug: bool = False
+
     log_level: str = "INFO"
 
     class Config:
