@@ -3,13 +3,23 @@
 All operations work in-memory on Pillow Image objects. The full Stage A entry
 point (`preprocess_for_stage_a`) takes raw bytes and returns JPEG bytes ready
 to send to Gemini.
+
+Coordinate space: the whole pipeline works in the UPRIGHT image (EXIF
+orientation applied), which is what the browser shows when the user annotates
+and what the detector sees. Decode with ``open_upright`` and measure with
+``upright_size``; never use the raw stored pixel grid for boxes, crops or
+overlays.
 """
 
 from __future__ import annotations
 
 import io
 
-from PIL import Image, ImageOps
+from PIL import ExifTags, Image, ImageOps
+
+# EXIF orientations whose transpose in ImageOps.exif_transpose swaps the axes
+# (TRANSPOSE, ROTATE_270, TRANSVERSE, ROTATE_90).
+_AXIS_SWAPPING_ORIENTATIONS = frozenset({5, 6, 7, 8})
 
 # Stage A targets Gemini's optimal input edge length and a high-quality JPEG.
 STAGE_A_LONGEST_EDGE_PX = 1568
@@ -28,6 +38,32 @@ def transpose_exif(img: Image.Image) -> Image.Image:
     needed, otherwise the original.
     """
     return ImageOps.exif_transpose(img)
+
+
+def open_upright(img_bytes: bytes) -> Image.Image:
+    """Decode image bytes into the upright (EXIF-transposed) image.
+
+    The returned image is fully loaded and independent of ``img_bytes``. With
+    no orientation to apply it is a pixel-identical copy of the raw decode.
+    """
+    with Image.open(io.BytesIO(img_bytes)) as img:
+        img.load()
+        return transpose_exif(img)
+
+
+def upright_size(img_bytes: bytes) -> tuple[int, int]:
+    """Return ``(width, height)`` of ``open_upright(img_bytes)`` without decoding pixels.
+
+    Reads the header size and the orientation the same way
+    ``ImageOps.exif_transpose`` does (``getexif()``), swapping the axes for
+    orientations 5-8.
+    """
+    with Image.open(io.BytesIO(img_bytes)) as img:
+        width, height = img.size
+        orientation = img.getexif().get(ExifTags.Base.Orientation, 1)
+    if orientation in _AXIS_SWAPPING_ORIENTATIONS:
+        return height, width
+    return width, height
 
 
 def resize_longest_edge(img: Image.Image, max_px: int) -> Image.Image:
@@ -60,17 +96,11 @@ def encode_jpeg(img: Image.Image, quality: int) -> bytes:
 
 def preprocess_for_stage_a(img_bytes: bytes) -> bytes:
     """Full Stage A preprocessing: EXIF transpose -> resize 1568px -> JPEG q=90."""
-    with Image.open(io.BytesIO(img_bytes)) as img:
-        img.load()
-        img = transpose_exif(img)
-        img = resize_longest_edge(img, STAGE_A_LONGEST_EDGE_PX)
-        return encode_jpeg(img, STAGE_A_JPEG_QUALITY)
+    img = resize_longest_edge(open_upright(img_bytes), STAGE_A_LONGEST_EDGE_PX)
+    return encode_jpeg(img, STAGE_A_JPEG_QUALITY)
 
 
 def preprocess_for_stage_b(img_bytes: bytes) -> bytes:
     """Full Stage B preprocessing: EXIF transpose -> resize 1568px -> JPEG q=88."""
-    with Image.open(io.BytesIO(img_bytes)) as img:
-        img.load()
-        img = transpose_exif(img)
-        img = resize_longest_edge(img, STAGE_B_LONGEST_EDGE_PX)
-        return encode_jpeg(img, STAGE_B_JPEG_QUALITY)
+    img = resize_longest_edge(open_upright(img_bytes), STAGE_B_LONGEST_EDGE_PX)
+    return encode_jpeg(img, STAGE_B_JPEG_QUALITY)

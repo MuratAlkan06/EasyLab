@@ -76,8 +76,8 @@ create table images (
   filename       text        not null,  -- original client filename for display
   mime_type    text        not null,   -- e.g. image/jpeg, image/png
   size_bytes   bigint,                 -- nullable until confirmed
-  width_px     int,                    -- nullable until confirmed
-  height_px    int,                    -- nullable until confirmed
+  width_px     int,                    -- nullable until confirmed; upright (EXIF-applied) dims
+  height_px    int,                    -- nullable until confirmed; upright (EXIF-applied) dims
   status       text        not null default 'pending_upload',
                             -- pending_upload | uploaded | processing | done | failed
   is_reference boolean     not null default false,
@@ -99,7 +99,7 @@ create index ix_images_project_id on images (project_id);
 ```
 
 Assumption: `storage_path` is always set at row creation (before upload), because the signed URL is generated first and the path is decided server-side.
-Assumption: `size_bytes`, `width_px`, `height_px` are filled in at confirm time.
+Assumption: `size_bytes`, `width_px`, `height_px` are filled in at confirm time. `width_px`/`height_px` are upright (EXIF-applied) dimensions: the confirm route swaps the decoded width/height for EXIF orientations 5–8.
 
 ---
 

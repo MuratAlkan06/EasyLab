@@ -28,6 +28,9 @@ const ALLOWED_MIME = new Set([
 ]);
 const MAX_BYTES = 52_428_800; // 50 MB — must match upload-urls validation
 const MIN_DIMENSION_PX = 16; // anything smaller is unusable for annotation
+// EXIF orientations whose display transform rotates the stored pixels by 90°
+// (transpose, rotate 90° CW, transverse, rotate 90° CCW), swapping the axes.
+const AXIS_SWAPPING_ORIENTATIONS = new Set([5, 6, 7, 8]);
 
 export async function POST(
   req: NextRequest,
@@ -123,6 +126,12 @@ export async function POST(
   // expose ranged reads, and a typical lab JPEG is a few MB at most. The
   // upside: width_px/height_px in the DB are now server-trusted, not whatever
   // the browser claimed.
+  //
+  // width_px/height_px are UPRIGHT dimensions (EXIF orientation applied):
+  // the space the browser displays, the user annotates in, and the worker
+  // normalizes boxes and crops in. image-size reports the RAW stored
+  // width/height plus a separate EXIF `orientation` it does not apply, so the
+  // axes are swapped here for orientations 5–8 (e.g. portrait phone photos).
   const { data: fileBlob, error: dlErr } = await supabase.storage
     .from("easylab")
     .download(storagePath);
@@ -142,8 +151,9 @@ export async function POST(
     if (!dims.width || !dims.height) {
       throw new Error("decoder returned no dimensions");
     }
-    decodedWidth = dims.width;
-    decodedHeight = dims.height;
+    const swapAxes = AXIS_SWAPPING_ORIENTATIONS.has(dims.orientation ?? 1);
+    decodedWidth = swapAxes ? dims.height : dims.width;
+    decodedHeight = swapAxes ? dims.width : dims.height;
   } catch (e) {
     return errorResponse(
       422,

@@ -440,8 +440,8 @@ def report(
 
 def write_overlays(gt: GroundTruth, pairs: list[Pair], out_dir: Path) -> None:
     """GT = green, prediction = blue. Drawn by the pipeline's render_overlay on
-    the image bytes as stored (RAW orientation until Slice 2 fixes the
-    renderer), so GT boxes are misplaced on EXIF-rotated fixtures."""
+    the upright image (EXIF applied), so GT and prediction boxes line up on
+    EXIF-rotated fixtures."""
     out_dir.mkdir(parents=True, exist_ok=True)
     for target in gt.targets:
         boxes = []

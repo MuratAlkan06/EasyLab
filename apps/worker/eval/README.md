@@ -48,16 +48,15 @@ Ground truth is defined in **upright** space, with EXIF orientation applied,
 because that's how users see and annotate images. A prediction is the
 normalized box Stage B hands to Stage C, and Stage C crops it from whatever
 canvas `stage_c._open_image` returns. The harness asks Stage C for that canvas
-and maps the prediction into upright space before computing IoU. Today Stage C
-opens **raw** bytes, so on the `exif6` fixture every backend scores ~0. Once
-Slice 2 moves Stage C to upright space, the same run jumps to the score of the
-fixture it was derived from (`target_02`), with no harness change. If Slice 2
-renames `_open_image`, update `_stage_c_canvas()` in `run_eval.py`.
+and maps the prediction into upright space before computing IoU. Stage C opens
+the **upright** (EXIF-applied) image, so the `exif6` fixture renders and scores
+correctly, matching the fixture it was derived from (`target_02`). If
+`_open_image` is renamed, update `_stage_c_canvas()` in `run_eval.py`.
 
-**Overlay JPEGs are drawn in RAW orientation until Slice 2 lands.** They go
-through the pipeline's own `render_overlay`, which doesn't apply EXIF yet. They
-are only wrong for the `exif6` fixture: there the GT box is misplaced, while
-the prediction box shows where Stage C would really crop.
+**Overlay JPEGs are drawn in upright orientation.** They go through the
+pipeline's own `render_overlay`, which applies EXIF before drawing, so GT and
+prediction boxes both sit on the upright image, including on the `exif6`
+fixture.
 
 ## Fixtures (`eval/fixtures/`)
 

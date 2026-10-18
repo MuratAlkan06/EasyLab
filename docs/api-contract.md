@@ -250,7 +250,7 @@ Called by the client after each image upload completes (Supabase Storage SDK sig
 {
   "size_bytes": int,   // optional; actual bytes received
   "width_px":  int,   // optional; image dimensions if decoded client-side
-  "height_px": int    // optional
+  "height_px": int    // optional; server stores upright (EXIF-applied) dims
 }
 ```
 

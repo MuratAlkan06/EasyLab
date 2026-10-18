@@ -22,7 +22,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageDraw, ImageFont
+
+from app.pipeline.image_utils import open_upright
 
 OverlayKind = Literal["accepted", "rejected", "fallback", "reference"]
 
@@ -49,14 +51,14 @@ class OverlayBox:
 
 
 def render_overlay(image_bytes: bytes, boxes: Iterable[OverlayBox]) -> bytes:
-    """Return a JPEG with the boxes drawn on top of the original image.
+    """Return a JPEG with the boxes drawn on top of the upright original image.
 
-    The original is opened, copied (so the input bytes aren't mutated), drawn
-    on, and re-encoded as a moderate-quality JPEG suitable for browser viewing.
+    The original is decoded in upright space (EXIF orientation applied, the
+    space the normalized boxes live in), copied (so the input bytes aren't
+    mutated), drawn on, and re-encoded as a moderate-quality JPEG suitable for
+    browser viewing.
     """
-    with Image.open(io.BytesIO(image_bytes)) as src:
-        src.load()
-        canvas = src.convert("RGB")
+    canvas = open_upright(image_bytes).convert("RGB")
 
     draw = ImageDraw.Draw(canvas)
     width, height = canvas.size

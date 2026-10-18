@@ -19,7 +19,6 @@ Runs after Stage A inside `process_batch`. Stage C consumes the returned map.
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import time
 from typing import Any
@@ -27,7 +26,6 @@ from uuid import UUID
 
 import asyncpg
 import structlog
-from PIL import Image
 from supabase import create_client
 from tenacity import (
     AsyncRetrying,
@@ -39,7 +37,7 @@ from tenacity import (
 from app.pipeline.crop_utils import box_iou, is_box_valid
 from app.pipeline.debug_overlay import OverlayBox, render_overlay
 from app.pipeline.gemini import call_stage_b, get_client
-from app.pipeline.image_utils import preprocess_for_stage_b
+from app.pipeline.image_utils import preprocess_for_stage_b, upright_size
 from app.pipeline.schemas import DetectionResponse
 from app.settings import settings
 
@@ -177,10 +175,13 @@ def _upload_debug_overlay(storage_path: str, jpeg_bytes: bytes) -> None:
 
 
 def _open_dimensions(img_bytes: bytes) -> tuple[int, int]:
-    """Return (width_px, height_px) for the raw image bytes."""
-    with Image.open(io.BytesIO(img_bytes)) as img:
-        img.load()
-        return img.size  # (width, height)
+    """Return (width_px, height_px) of the UPRIGHT (EXIF-applied) image.
+
+    Boxes are normalized against the upright image (the detector and the
+    annotation UI both see it), so validation, crops and the images row
+    backfill must use upright dimensions too.
+    """
+    return upright_size(img_bytes)
 
 
 async def _write_failed_cell(
@@ -259,7 +260,7 @@ async def _process_image(
         task["task_id"],
     )
 
-    # Download + measure original dimensions + preprocess for Gemini.
+    # Download + measure upright full-resolution dimensions + preprocess for Gemini.
     try:
         raw_bytes = await asyncio.to_thread(_download_image_bytes, storage_path)
         width_px, height_px = await asyncio.to_thread(_open_dimensions, raw_bytes)
