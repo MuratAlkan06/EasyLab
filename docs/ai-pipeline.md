@@ -1,6 +1,6 @@
 # EasyLab — AI Pipeline Specification (v1 MVP)
 
-> Generated: 2026-05-05
+> Generated: 2026-05-05 · Updated: 2026-10-18 (Phase 7: Stage B detection is now a deterministic aligner, no model call. See ADR-007)
 > Owner: FastAPI worker on Fly.io. Next.js never calls Gemini directly.
 
 ---
@@ -37,11 +37,12 @@ For each non-reference image in the batch:
           │
           ▼
    Stage B — Region Detection (once per image)
-   Gemini 2.5 Pro
-   Input:  image + all template fields with semantic_description
-   Output: detected_box + box_confidence per field (or found=false)
+   Deterministic aligner (OpenCV on CPU, no model call)
+   Input:  image + reference image + reference_box per field
+   Output: detected_box + box_confidence per field
+           (not located → reference_box fallback at 0.55)
           │
-          ├─── found=false → cell.status='failed', skip Stage C
+          ├─── no usable box → cell.status='failed', skip Stage C
           │
           ▼
    Stage C — Value Extraction (once per detected region per field)
@@ -54,7 +55,7 @@ For each non-reference image in the batch:
    Write cell row with combined_confidence + status
 ```
 
-**Key rule:** EXIF transpose is applied to every image before any stage.
+**Key rule:** EXIF transpose is applied to every image before any stage. Boxes, crops and overlays all live in that upright space (the space the user annotated in).
 
 ---
 
@@ -112,63 +113,89 @@ class TemplateGenerationResponse(BaseModel):
 - On second failure: set `projects.template_quality = 'degraded'`, synthesize semantic_description from field_name + reference_box position (e.g. "field named 'Voltage' at top-left of image")
 - User sees a warning banner before processing: "Template quality degraded — accuracy may be lower"
 
+Since Phase 7, Stage B does not read `semantic_description` (it locates fields geometrically, see §4). It is still generated and stored. `expected_format` remains load-bearing: Stage C uses it for hints and validation.
+
 ---
 
 ## 4. Stage B — Region Detection {#stage-b}
 
-**Model:** Gemini 2.5 Pro
-**When:** Once per non-reference image, run in parallel (IMAGE_CONCURRENCY=5)
+**Method:** Deterministic reference-box transfer (`app/pipeline/align.py`): feature-based homography plus template-matching verification, OpenCV on CPU. **No model call, no token cost.**
+**When:** Once per non-reference image, run in parallel (IMAGE_CONCURRENCY=5) via `asyncio.to_thread`. The reference image is downloaded once per job and its features are precomputed. Only the 1024 px grayscale and the keypoints/descriptors are kept.
+
+Batches are near-identical photos of the same setup, so the user's own `reference_box` is the strongest signal available. Stage B estimates how the camera moved between the reference and each image, then carries every box across.
+
+For why Gemini detection was replaced, the options rejected, and the eval evidence, see [ADR-007](adr-007-stage-b-detection.md).
 
 ### Preprocessing
 
-1. EXIF transpose
-2. Resize: longest edge → 1568 px, preserve aspect ratio
-3. Encode: JPEG quality = 88
+1. EXIF transpose (reference and target alike, so both are upright)
+2. Grayscale
+3. Resize: longest edge → 1024 px working resolution (up- or downscaled)
 
-### GenerationConfig
+### Alignment
 
-```python
-generation_config = GenerationConfig(
-    temperature=1.0,
-    thinking_config=ThinkingConfig(thinking_budget=-1),  # spatial reasoning benefits
-    max_output_tokens=1024,
-    response_mime_type="application/json",
-    response_schema=DetectionResponse.model_json_schema(),
-)
-```
+1. **Features:** AKAZE. Reference-side keypoints are kept only inside the union of the reference boxes, each dilated 2.5× about its center. A static background plane (whiteboard, wall) therefore cannot win RANSAC.
+2. **Matching:** brute-force Hamming 2-NN with Lowe's ratio test (0.75). At least 8 matches are required to estimate H.
+3. **Homography:** legacy `cv2.RANSAC` (never USAC): 3 px reprojection threshold, 2000 iterations, confidence 0.995. `cv2.setRNGSeed` is called inside each synchronous entry point, because OpenCV's RNG is per thread and the `to_thread` pool reuses threads. The same image and reference always give the same H.
+4. **Sanity gates** on the projected region of interest (the bounds of the feature mask). H is rejected unless all of these hold:
+   - the projected quad is convex and not mirrored
+   - scale (√ area ratio) is 0.5–2.0
+   - rotation is ≤ 30°
+   - center displacement is ≤ 25% of the target diagonal
+5. **Strength:** H is *strong* with ≥ 30 RANSAC inliers AND inlier ratio ≥ 0.4. Otherwise it is *weak*.
 
-### Pydantic Response Schema
+### Per-field box
 
-```python
-class DetectedField(BaseModel):
-    field_name: str
-    found: bool
-    box: list[int] | None  # [ymin, xmin, ymax, xmax] in 0..1000 space (Gemini native)
-    box_confidence: float  # 0.0..1.0
+| H | Box | NCC role |
+|---|---|---|
+| strong | axis-aligned bounds of the reference box projected through H (`perspectiveTransform`) | **verification only**: a pass raises confidence; a fail keeps H's box and band. Glare or a digit change is not misalignment, so NCC never moves a strong-H box |
+| weak / rejected / none | reference box moved by the NCC shift | **rescue**: NCC around the raw reference location (identity transfer) |
+| nothing passes | reference box unchanged | fallback |
 
-class DetectionResponse(BaseModel):
-    fields: list[DetectedField]
-```
+NCC is `cv2.matchTemplate(TM_CCOEFF_NORMED)`, translation only, run in the reference frame (for strong H, the target is first warped into it). The template is the reference box padded by 50% of its width/height on each side. The bezel ring is then ~75% of the template, so changing digits don't dominate. The search window is the box ± 100% of its dimensions. A match **passes** when peak ≥ 0.50 AND shift ≤ 0.3 × min(box width, box height).
 
-### Box Coordinate Conversion
+### Confidence bands
 
-Gemini returns `[ymin, xmin, ymax, xmax]` in 0..1000 space. Convert to normalized 0..1:
+Bands are keyed to H strength, not to the NCC score. `method` is the value logged in `stage_b.detector_raw`.
 
-```python
-x = xmin / 1000
-y = ymin / 1000
-width  = (xmax - xmin) / 1000
-height = (ymax - ymin) / 1000
-```
+| Outcome | `method` | box_confidence |
+|---|---|---|
+| strong H + NCC confirmed | `homography+ncc` | 0.93 |
+| strong H, NCC not confirmed | `homography` | 0.85 |
+| weak/no H + NCC rescue | `ncc_rescue` | 0.70 |
+| reference-box fallback | `fallback` | 0.55 |
 
-Store as `{"x": float, "y": float, "width": float, "height": float}` in `cells.detected_box`.
+The 0.55 fallback can never reach `ok`: the best possible combined score is 0.4 × 0.55 + 0.6 × 1.0 = 0.82 < 0.85 (§6). This is intentional. A strong-H box with a clean Stage C read (value_confidence ≥ 0.85) can reach `ok`.
+
+### Acceptance ladder and fallback
+
+Unchanged from the Gemini-era ladder in `stage_b.py`:
+
+1. A box with box_confidence < 0.30 is rejected (`failure_reason = 'low_confidence'`).
+2. A box failing the rejection criteria below is rejected.
+3. Any rejected or unlocated field falls back to its `reference_box` at **0.55**, provided that box is itself valid on this image. Otherwise a failed cell is written (`failure_reason = 'field_not_visible'` unless low confidence) and Stage C is skipped for that field.
+4. If alignment raises, the same per-field fallback applies. If the image can't be downloaded or decoded, every field becomes a failed cell and the image task ends `not_found`.
 
 ### Box Rejection Criteria
 
-After coordinate conversion, reject detected box (treat as found=false) if:
+Reject a box (treat as not located) if:
 - Box area in original image < 25 px²
 - Box width or height in original image < 8 px
-- Box covers > 60% of the total image area (likely a hallucination)
+- Box covers > 60% of the total image area
+
+### Output
+
+Boxes are stored in `cells.detected_box` as `{"x": float, "y": float, "width": float, "height": float}`, normalized 0..1 against the upright original image. `cells.model_versions.detector` is `align-v<N>+opencv<cv2.__version__>` (e.g. `align-v1+opencv4.13.0`). Results are bit-identical across runs within one OpenCV version, so the worker pins OpenCV exactly in `pyproject.toml`. Bump `align-vN` whenever the algorithm or thresholds change.
+
+### Telemetry
+
+Logged for every field regardless of `STAGE_B_DEBUG`: `stage_b.detector_raw` with method, box_confidence, detector box, NCC peak, and IoU vs `reference_box`. Every image logs `stage_b.image.aligned` with align_ms, h_status, matches and inliers. More than ~30% of fields on the 0.55 fallback in production is the trigger to recalibrate thresholds. `STAGE_B_DEBUG=true` also uploads per-image overlay JPEGs.
+
+### Accuracy and limits
+
+Offline eval (`apps/worker/eval/run_eval.py`, 12 bench-crop targets, 48 field instances): **mean IoU 0.830, hit-rate@0.5 96%**. The pre-Phase-7 Gemini detector scored 0.389 / 38% and plain reference-box passthrough 0.467 / 44%. Alignment takes ~35–45 ms per image on the dev machine. Thresholds may only be retuned on eval evidence.
+
+The aligner assumes near-identical batches. Large viewpoint changes, occlusion, or featureless instrument faces degrade to the 0.55 fallback (→ `low_confidence` / `needs_review`). Stage C legibility and Flash/OCR disagreement are the second safety net.
 
 ---
 
@@ -186,7 +213,7 @@ After coordinate conversion, reject detected box (treat as found=false) if:
 
 ### Preprocessing for Gemini Flash
 
-1. Crop from **original-resolution** image (not the 1568px detection version)
+1. Crop from the **original-resolution** upright image (not a downscaled copy)
 2. Resize: longest edge → 768 px maximum
 3. Encode: JPEG quality = 92
 
@@ -235,7 +262,7 @@ combined_confidence = round(0.4 × box_confidence + 0.6 × value_confidence, 3)
 | ok | combined_confidence ≥ 0.85 AND legible = true AND validation_error IS NULL |
 | low_confidence | combined_confidence in [0.60, 0.85) |
 | needs_review | combined_confidence < 0.60 OR legible = false OR validation_error IS NOT NULL |
-| failed | found = false OR parsed_value is null after retry |
+| failed | no usable box from Stage B (not located and no valid reference_box) OR parsed_value is null after retry |
 
 `failed` cells are always written so the review table has a complete row for every (image × field) pair.
 
@@ -266,9 +293,10 @@ PaddleOCR runs in parallel with Gemini Flash on the same crop. Both results are 
 
 | Failure mode | Handling |
 |---|---|
-| JSON schema validation failure (Stage A/B/C) | Retry once; if second failure: see stage-specific fallback |
-| found = false (Stage B) | Skip Stage C, write failed cell with `failure_reason = 'field_not_visible'` |
-| Box rejected (area/dimension/coverage check) | Treat as found=false |
+| JSON schema validation failure (Stage A/C) | Retry once; if second failure: see stage-specific fallback |
+| Field not located (Stage B) | Use `reference_box` at 0.55 if valid; otherwise skip Stage C, write failed cell with `failure_reason = 'field_not_visible'` |
+| Box rejected (area/dimension/coverage check) | Treat as not located |
+| Alignment error (Stage B) | Per-field `reference_box` fallback, as above |
 | legible = false (Stage C) | Write cell with `needs_review`, include PaddleOCR fallback if available |
 | parsed_value null after retry | Write failed cell with `failure_reason = 'extraction_failed'` |
 | validation_error | Write cell with `needs_review` and `validation_error` text |
@@ -317,14 +345,14 @@ The worker checks `jobs.status = 'cancelled'` between each image (after completi
 
 - Heartbeat written every **5 seconds** (`jobs.heartbeat_at`)
 - Stale threshold: **180 seconds** — jobs not heartbeated for 3 minutes are reclaimed
-- 180s chosen because Stage B (detection) can take 30–60s per batch; 60s threshold was too aggressive
+- 180s was chosen when Stage B made Gemini calls (30–60s per batch) and a 60s threshold proved too aggressive. Stage B is now sub-second CPU per image, but the threshold stays as headroom for Stage A/C model calls.
 
 ### max_output_tokens per Stage
 
 | Stage | Model | max_output_tokens |
 |---|---|---|
 | A — Template Gen | Gemini 2.5 Pro | 2048 |
-| B — Detection | Gemini 2.5 Pro | 1024 |
+| B — Detection | — (no model call) | — |
 | C — Extraction | Gemini 2.5 Flash | 256 |
 
 ### Cost Estimate (50 images × 4 fields)
@@ -332,11 +360,13 @@ The worker checks `jobs.status = 'cancelled'` between each image (after completi
 | Stage | Calls | Est. Cost |
 |---|---|---|
 | A — Template Gen | 1 | ~$0.01 |
-| B — Detection | 50 | ~$0.32 |
+| B — Detection | 0 (CPU aligner) | $0 |
 | C — Extraction | 200 | ~$0.07 |
-| **Total** | **251** | **~$0.40–0.46** |
+| **Total** | **201** | **~$0.08** |
 
-Estimated latency: **~50 seconds** end-to-end with IMAGE_CONCURRENCY=5.
+Before Phase 7, Stage B was 50 Gemini 2.5 Pro calls (~$0.32), for a ~$0.40–0.46 job.
+
+Estimated latency: Stage B went from 30–60 s of model calls per batch to well under a second of CPU per image. End-to-end time is now dominated by the Stage A and Stage C model calls. The old **~50 seconds** end-to-end estimate (IMAGE_CONCURRENCY=5) predates Phase 7 and has not been re-measured live.
 
 ### Spend Controls
 

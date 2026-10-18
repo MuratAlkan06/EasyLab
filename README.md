@@ -22,7 +22,7 @@ Manually transcribing values off dozens of near-identical images is slow and err
 Two services + Supabase.
 
 - **`apps/web`** — Next.js 15 on Vercel. Owns UI, signed upload URLs, project/image/field CRUD, job enqueue, CSV export.
-- **`apps/worker`** — FastAPI on Fly.io (persistent VM). Owns all Gemini calls, all image processing (Pillow, PaddleOCR), and the in-process asyncio job queue.
+- **`apps/worker`** — FastAPI on Fly.io (persistent VM). Owns all Gemini calls, all image processing (Pillow, OpenCV, PaddleOCR), and the in-process asyncio job queue.
 - **Supabase** — Postgres for data, Storage for image files (private bucket `easylab`).
 
 The browser uploads files **directly** to Supabase Storage via a signed URL minted by Next.js — uploads never pass through the API. Next.js never calls Gemini; all AI runs on the FastAPI worker.
@@ -37,7 +37,7 @@ More diagrams (data flow, ERD, state machines) live in [`docs/diagrams/`](docs/d
 .
 ├── apps/
 │   ├── web/            Next.js 15 (TypeScript, Tailwind, react-konva, shadcn/ui)
-│   └── worker/         FastAPI + asyncio (Pydantic v2, asyncpg, Pillow, PaddleOCR)
+│   └── worker/         FastAPI + asyncio (Pydantic v2, asyncpg, Pillow, OpenCV, PaddleOCR)
 ├── docs/
 │   ├── api-contract.md
 │   ├── ai-pipeline.md
@@ -94,8 +94,9 @@ More diagrams (data flow, ERD, state machines) live in [`docs/diagrams/`](docs/d
 | Layer | Tools |
 |---|---|
 | Frontend | Next.js 15, TypeScript, Tailwind, react-konva, shadcn/ui, TanStack Table/Virtual/Query, Zod |
-| Backend | FastAPI, Pydantic v2, asyncpg, supabase-py, Pillow, tenacity, structlog |
-| AI | Gemini 2.5 Pro (template gen + detection), Gemini 2.5 Flash (extraction), PaddleOCR (parallel reader) |
+| Backend | FastAPI, Pydantic v2, asyncpg, supabase-py, Pillow, OpenCV, tenacity, structlog |
+| AI | Gemini 2.5 Pro (template gen), Gemini 2.5 Flash (extraction), PaddleOCR (parallel reader) |
+| Detection | Classical CV aligner (OpenCV: AKAZE + seeded RANSAC homography + NCC verification), no model call |
 | Data | Supabase Postgres + Storage, Alembic migrations |
 | Export | CSV (XLSX deferred) |
 
@@ -103,13 +104,20 @@ More diagrams (data flow, ERD, state machines) live in [`docs/diagrams/`](docs/d
 
 ![AI pipeline diagram](docs/diagrams/ai-pipeline.png)
 
-Three stages run on the FastAPI worker. Stage A enriches user annotations into a semantic template (once per project). Stage B detects each field's bounding box on every new image. Stage C reads the value from each crop with Gemini Flash and PaddleOCR running in parallel for cross-validation. Every Gemini call uses native JSON schema from Pydantic — no prompt-engineered JSON. See [`docs/ai-pipeline.md`](docs/ai-pipeline.md) for full details.
+Three stages run on the FastAPI worker. Stage A enriches user annotations into a semantic template (once per project). Stage B finds each field on every other image without a model call. It aligns the image to the reference with OpenCV (AKAZE features + seeded RANSAC homography, sanity-gated), carries the user's reference boxes across, and verifies them with template matching. When alignment is unsure it falls back to the reference box at lower confidence. Stage C reads the value from each crop with Gemini Flash and PaddleOCR running in parallel for cross-validation. Every Gemini call uses native JSON schema from Pydantic — no prompt-engineered JSON. See [`docs/ai-pipeline.md`](docs/ai-pipeline.md) for full details.
+
+**Detection accuracy** comes from the offline eval in [`apps/worker/eval/`](apps/worker/eval/): 12 bench-crop targets, 48 field instances, hit = IoU ≥ 0.5.
+
+| Stage B detector | Mean IoU | Hit-rate | Cost / determinism |
+|---|---|---|---|
+| Gemini 2.5 Pro (before Phase 7) | 0.389 | 38% | 1 Pro call per image, stochastic |
+| Deterministic aligner (Phase 7) | 0.830 | 96% | $0, bit-identical across runs |
 
 ---
 
 ## Build phases
 
-All phases complete in [`v0.6.0`](https://github.com/MuratAlkan06/EasyLab/releases/tag/v0.6.0) (shipped 2026-05-13).
+Phases 1–6 shipped in [`v0.6.0`](https://github.com/MuratAlkan06/EasyLab/releases/tag/v0.6.0) (2026-05-13); Phase 7 followed in 2026-10.
 
 - [x] **Phase 1** — Monorepo scaffold + docker-compose + Supabase migrations + fake job smoke test
 - [x] **Phase 2** — Template generation (Gemini 2.5 Pro adds `semantic_description`)
@@ -117,6 +125,7 @@ All phases complete in [`v0.6.0`](https://github.com/MuratAlkan06/EasyLab/releas
 - [x] **Phase 4** — Crops + confidence + `needs_review` flags
 - [x] **Phase 5** — CSV export + `cell_overrides` survive re-runs
 - [x] **Phase 6** — Polish: circuit breaker, global token budget, per-workspace daily image quota, server-trusted size + mime, byte-decoded width/height, per-workspace token cap, quota UI, Supabase Realtime, vitest harness
+- [x] **Phase 7** — Deterministic Stage B detection: Gemini detection replaced by a classical CV aligner, EXIF upright-space canonicalization, offline detection eval harness
 
 ---
 
@@ -138,6 +147,8 @@ All phases complete in [`v0.6.0`](https://github.com/MuratAlkan06/EasyLab/releas
 | [`docs/database-schema.md`](docs/database-schema.md) | Writing migrations, adding columns, understanding state machines |
 | [`docs/api-contract.md`](docs/api-contract.md) | Implementing any API route |
 | [`docs/migrations-strategy.md`](docs/migrations-strategy.md) | Before running Alembic |
-| [`docs/ai-pipeline.md`](docs/ai-pipeline.md) | Implementing any Gemini / OCR / confidence logic |
+| [`docs/ai-pipeline.md`](docs/ai-pipeline.md) | Implementing any Gemini / Stage B alignment / OCR / confidence logic |
+| [`docs/adr-007-stage-b-detection.md`](docs/adr-007-stage-b-detection.md) | Why Stage B is a deterministic aligner: options considered, engineering rules, eval results, rollback |
+| [`apps/worker/eval/README.md`](apps/worker/eval/README.md) | Before changing Stage B detection (offline accuracy eval) |
 | [`docs/ui-spec.md`](docs/ui-spec.md) | Implementing any frontend page or canvas interaction |
 | [`docs/diagrams/index.html`](docs/diagrams/index.html) | Visual reference — infrastructure, data flow, AI pipeline, ERD, state machines |
