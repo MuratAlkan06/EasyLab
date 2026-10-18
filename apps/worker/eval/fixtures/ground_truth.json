@@ -1,0 +1,433 @@
+{
+  "format_version": 1,
+  "box_format": "[x, y, w, h], normalized 0..1 against the UPRIGHT (EXIF-orientation-applied) image, top-left origin",
+  "absent_convention": "null = the field's live display is not visible/legible in that image; null fields are excluded from scoring (and a field null in the reference is not part of the template)",
+  "gt_convention": "Tight box on the LIVE readout window: the display glass that holds the changing characters (inner edge of the bezel/frame). Never the printed VOLT/AMP labels, nameplates, or bezel.",
+  "provenance": "Real frames from one lab-bench batch, cropped to the bench region; background/bystanders/hands flat-grey redacted (see README). exif6 + lighting fixtures are synthesized by eval/make_fixtures.py.",
+  "reference": "reference.jpg",
+  "fields": [
+    {
+      "name": "psu_volt_display",
+      "semantic_description": "Left-hand 7-segment LCD window on the front panel of the black bench DC power supply: dark digits on a pale grey-green glass showing the output voltage with one decimal place (e.g. '10.7'). It is the left of two side-by-side LCD windows in the recessed black display bezel across the top of the panel; the printed 'VOLT' marking sits on the bezel just below it."
+    },
+    {
+      "name": "psu_amp_display",
+      "semantic_description": "Right-hand 7-segment LCD window on the same black DC power supply, immediately right of the voltage window, showing the output current with two decimal places (e.g. '0.06'); a small red CURRENT LIMITED indicator sits to its right and the printed 'AMP.' marking below it."
+    },
+    {
+      "name": "handheld_display",
+      "semantic_description": "Large monochrome LCD at the top of the orange-and-green Extech EX410A handheld multimeter, showing a 4-digit reading with a decimal point in tall black 7-segment digits on a grey background, framed by the dark green bezel above the 'EXTECH' logo and the F/C/HOLD buttons."
+    },
+    {
+      "name": "bench_meter_display",
+      "semantic_description": "Wide segmented readout window across the upper front panel of the beige HP 3468A bench multimeter, showing a signed 5.5-digit value (e.g. '+0.06467') followed by the function annunciator ('ADC') in dark segmented characters behind a tinted glass strip, below the '3468A MULTIMETER' nameplate and above the rows of grey push-buttons."
+    }
+  ],
+  "images": [
+    {
+      "file": "reference.jpg",
+      "class": "reference",
+      "note": "Hand-held framing; hand/bystanders redacted.",
+      "boxes": {
+        "psu_volt_display": [
+          0.0429,
+          0.406,
+          0.1068,
+          0.0723
+        ],
+        "psu_amp_display": [
+          0.1729,
+          0.4072,
+          0.1008,
+          0.0735
+        ],
+        "handheld_display": [
+          0.3526,
+          0.1072,
+          0.1579,
+          0.1807
+        ],
+        "bench_meter_display": [
+          0.5692,
+          0.5325,
+          0.3496,
+          0.1313
+        ]
+      }
+    },
+    {
+      "file": "target_01.jpg",
+      "class": "aligned",
+      "note": "Same framing as reference (~0.3% diag shift).",
+      "boxes": {
+        "psu_volt_display": [
+          0.0436,
+          0.412,
+          0.1083,
+          0.0699
+        ],
+        "psu_amp_display": [
+          0.1737,
+          0.4108,
+          0.1023,
+          0.0759
+        ],
+        "handheld_display": [
+          0.3534,
+          0.1145,
+          0.1609,
+          0.1867
+        ],
+        "bench_meter_display": [
+          0.5714,
+          0.5422,
+          0.3459,
+          0.1205
+        ]
+      }
+    },
+    {
+      "file": "target_02.jpg",
+      "class": "aligned",
+      "note": "Same framing as reference (~0.6% diag shift).",
+      "boxes": {
+        "psu_volt_display": [
+          0.0444,
+          0.394,
+          0.1083,
+          0.0723
+        ],
+        "psu_amp_display": [
+          0.1752,
+          0.394,
+          0.1,
+          0.0759
+        ],
+        "handheld_display": [
+          0.3534,
+          0.0855,
+          0.1647,
+          0.1988
+        ],
+        "bench_meter_display": [
+          0.5752,
+          0.5253,
+          0.3444,
+          0.1229
+        ]
+      }
+    },
+    {
+      "file": "target_03.jpg",
+      "class": "aligned",
+      "note": "Same framing, ~1.3% diag vertical shift.",
+      "boxes": {
+        "psu_volt_display": [
+          0.0451,
+          0.3723,
+          0.109,
+          0.0771
+        ],
+        "psu_amp_display": [
+          0.1767,
+          0.3735,
+          0.1,
+          0.0807
+        ],
+        "handheld_display": [
+          0.3534,
+          0.0566,
+          0.1669,
+          0.2
+        ],
+        "bench_meter_display": [
+          0.5797,
+          0.5108,
+          0.3504,
+          0.1181
+        ]
+      }
+    },
+    {
+      "file": "target_04.jpg",
+      "class": "aligned",
+      "note": "Same framing, ~1.6% diag vertical shift.",
+      "boxes": {
+        "psu_volt_display": [
+          0.0474,
+          0.3639,
+          0.1083,
+          0.0735
+        ],
+        "psu_amp_display": [
+          0.1797,
+          0.3651,
+          0.0985,
+          0.0795
+        ],
+        "handheld_display": [
+          0.3541,
+          0.0494,
+          0.1647,
+          0.2036
+        ],
+        "bench_meter_display": [
+          0.5797,
+          0.4988,
+          0.3489,
+          0.1253
+        ]
+      }
+    },
+    {
+      "file": "target_05.jpg",
+      "class": "shifted",
+      "note": "Camera lower/back: ~3% diag shift, ~4% zoom-out.",
+      "boxes": {
+        "psu_volt_display": [
+          0.0827,
+          0.453,
+          0.103,
+          0.0735
+        ],
+        "psu_amp_display": [
+          0.209,
+          0.4542,
+          0.097,
+          0.0795
+        ],
+        "handheld_display": [
+          0.3842,
+          0.1831,
+          0.1579,
+          0.1735
+        ],
+        "bench_meter_display": [
+          0.5947,
+          0.5976,
+          0.3444,
+          0.1229
+        ]
+      }
+    },
+    {
+      "file": "target_06.jpg",
+      "class": "shifted",
+      "note": "~2.7% diag shift up-right, ~1 deg roll.",
+      "boxes": {
+        "psu_volt_display": [
+          0.0541,
+          0.3458,
+          0.1098,
+          0.0723
+        ],
+        "psu_amp_display": [
+          0.1857,
+          0.3482,
+          0.103,
+          0.0759
+        ],
+        "handheld_display": [
+          0.3654,
+          0.0265,
+          0.1632,
+          0.2036
+        ],
+        "bench_meter_display": [
+          0.591,
+          0.4723,
+          0.3519,
+          0.1265
+        ]
+      }
+    },
+    {
+      "file": "target_07.jpg",
+      "class": "shifted",
+      "note": "Different session framing: ~4.6% diag shift, ~3.5 deg roll, ~7% zoom-out.",
+      "boxes": {
+        "psu_volt_display": [
+          0.1248,
+          0.3928,
+          0.0992,
+          0.0687
+        ],
+        "psu_amp_display": [
+          0.2459,
+          0.394,
+          0.097,
+          0.0711
+        ],
+        "handheld_display": [
+          0.4105,
+          0.0928,
+          0.1632,
+          0.1867
+        ],
+        "bench_meter_display": [
+          0.6346,
+          0.4976,
+          0.3451,
+          0.1084
+        ]
+      }
+    },
+    {
+      "file": "target_08.jpg",
+      "class": "shifted",
+      "note": "Angled: ~4.4% diag shift, ~7.5 deg roll, ~18% zoom-out.",
+      "boxes": {
+        "psu_volt_display": [
+          0.1293,
+          0.459,
+          0.103,
+          0.0675
+        ],
+        "psu_amp_display": [
+          0.2504,
+          0.4602,
+          0.0962,
+          0.0675
+        ],
+        "handheld_display": [
+          0.4083,
+          0.1349,
+          0.1617,
+          0.1904
+        ],
+        "bench_meter_display": [
+          0.6361,
+          0.541,
+          0.3444,
+          0.0904
+        ]
+      }
+    },
+    {
+      "file": "target_09.jpg",
+      "class": "shifted",
+      "note": "Zoomed in + panned: strong scale change, PSU side panel visible.",
+      "boxes": {
+        "psu_volt_display": [
+          0.1,
+          0.4024,
+          0.103,
+          0.059
+        ],
+        "psu_amp_display": [
+          0.2233,
+          0.4036,
+          0.1023,
+          0.0602
+        ],
+        "handheld_display": [
+          0.4496,
+          0.1133,
+          0.1519,
+          0.1518
+        ],
+        "bench_meter_display": [
+          0.6414,
+          0.4843,
+          0.3241,
+          0.0892
+        ]
+      }
+    },
+    {
+      "file": "target_10.jpg",
+      "class": "shifted",
+      "note": "~4% diag shift, ~4 deg roll, ~12% zoom-out.",
+      "boxes": {
+        "psu_volt_display": [
+          0.1218,
+          0.459,
+          0.1015,
+          0.0614
+        ],
+        "psu_amp_display": [
+          0.2421,
+          0.4614,
+          0.1008,
+          0.0651
+        ],
+        "handheld_display": [
+          0.4,
+          0.1325,
+          0.1609,
+          0.188
+        ],
+        "bench_meter_display": [
+          0.6286,
+          0.5458,
+          0.3391,
+          0.1012
+        ]
+      }
+    },
+    {
+      "file": "target_11.jpg",
+      "class": "exif6",
+      "derived_from": "target_02.jpg",
+      "note": "Pixels of target_02 stored rotated 90 deg CCW with EXIF Orientation=6; upright view == target_02.",
+      "boxes": {
+        "psu_volt_display": [
+          0.0444,
+          0.394,
+          0.1083,
+          0.0723
+        ],
+        "psu_amp_display": [
+          0.1752,
+          0.394,
+          0.1,
+          0.0759
+        ],
+        "handheld_display": [
+          0.3534,
+          0.0855,
+          0.1647,
+          0.1988
+        ],
+        "bench_meter_display": [
+          0.5752,
+          0.5253,
+          0.3444,
+          0.1229
+        ]
+      }
+    },
+    {
+      "file": "target_12.jpg",
+      "class": "lighting",
+      "derived_from": "target_01.jpg",
+      "note": "target_01 darkened, warm cast, low contrast + specular glare over PSU volt, HP and Extech displays.",
+      "boxes": {
+        "psu_volt_display": [
+          0.0436,
+          0.412,
+          0.1083,
+          0.0699
+        ],
+        "psu_amp_display": [
+          0.1737,
+          0.4108,
+          0.1023,
+          0.0759
+        ],
+        "handheld_display": [
+          0.3534,
+          0.1145,
+          0.1609,
+          0.1867
+        ],
+        "bench_meter_display": [
+          0.5714,
+          0.5422,
+          0.3459,
+          0.1205
+        ]
+      }
+    }
+  ]
+}

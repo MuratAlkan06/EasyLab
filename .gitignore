@@ -26,6 +26,11 @@ build/
 apps/web/.env.local
 apps/worker/.env
 
+# Worker eval harness — full-frame originals may contain people (never commit);
+# out/ holds regenerated overlay JPEGs + metrics.
+apps/worker/eval/fixtures_private/
+apps/worker/eval/out/
+
 # OS
 .DS_Store
 Thumbs.db
