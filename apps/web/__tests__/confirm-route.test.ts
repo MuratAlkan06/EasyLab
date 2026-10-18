@@ -7,6 +7,9 @@
  * The Supabase client and workspace cookie helper are mocked at the module
  * level; the real `image-size` decoder runs against tiny synthetic JPEG
  * headers, so the orientation handling is exercised end to end.
+ *
+ * The route also only lets image-size parse JPEG/PNG and requires the decoded
+ * type to match the stored mime (CVE-2025-71329/71330 hardening).
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +18,11 @@ import { imageSize } from "image-size";
 const mockState = vi.hoisted(() => ({
   workspaceId: "workspace-1" as string | null,
   fileBytes: new Uint8Array(0),
+  mimeType: "image/jpeg",
+  // Overrides the stored size list() reports, so the size limit can be
+  // exercised without allocating ~20 MB; null means fileBytes.length.
+  storedSize: null as number | null,
+  downloads: 0,
   updates: [] as Record<string, unknown>[],
 }));
 
@@ -53,11 +61,19 @@ vi.mock("@/lib/supabase", () => {
         from: () => ({
           list: async () => ({
             data: [
-              { metadata: { mimetype: "image/jpeg", size: mockState.fileBytes.length } },
+              {
+                metadata: {
+                  mimetype: mockState.mimeType,
+                  size: mockState.storedSize ?? mockState.fileBytes.length,
+                },
+              },
             ],
             error: null,
           }),
-          download: async () => ({ data: new Blob([mockState.fileBytes]), error: null }),
+          download: async () => {
+            mockState.downloads += 1;
+            return { data: new Blob([mockState.fileBytes]), error: null };
+          },
         }),
       },
     },
@@ -112,8 +128,59 @@ function jpegHeader(orientation?: number, littleEndian = false): Uint8Array<Arra
   return new Uint8Array(bytes);
 }
 
-async function confirm(fileBytes: Uint8Array<ArrayBuffer>) {
+function ascii(s: string): number[] {
+  return Array.from(s, (c) => c.charCodeAt(0));
+}
+
+/** Minimal PNG header: signature + IHDR declaring RAW_W×RAW_H (CRC unchecked). */
+function pngHeader(): Uint8Array<ArrayBuffer> {
+  const ihdr = [...u32(RAW_W, false), ...u32(RAW_H, false), 8, 2, 0, 0, 0];
+  return new Uint8Array([
+    0x89,
+    ...ascii("PNG\r\n\x1a\n"),
+    ...u32(ihdr.length, false),
+    ...ascii("IHDR"),
+    ...ihdr,
+    ...u32(0, false),
+  ]);
+}
+
+/**
+ * Headers of formats the product does not accept, each valid enough for
+ * image-size's detector to identify. The ICNS/HEIF/JXL ones carry the
+ * zero-length entry/box shape behind CVE-2025-71329/71330: a parser that
+ * advances by the declared length never moves past it.
+ */
+const FOREIGN_HEADERS: Record<string, number[]> = {
+  icns: [...ascii("icns"), ...u32(16, false), ...ascii("ic08"), ...u32(0, false)],
+  heif: [
+    ...u32(16, false),
+    ...ascii("ftypheic"),
+    ...u32(0, false),
+    ...u32(0, false),
+    ...ascii("meta"),
+  ],
+  jxl: [
+    ...u32(12, false),
+    ...ascii("JXL "),
+    0x0d,
+    0x0a,
+    0x87,
+    0x0a,
+    ...u32(20, false),
+    ...ascii("ftypjxl "),
+    ...u32(0, false),
+    ...ascii("jxl "),
+    ...u32(0, false),
+    ...ascii("jxlp"),
+  ],
+  // Well-formed and harmless, but still not JPEG/PNG: its parser is off too.
+  gif: [...ascii("GIF89a"), ...u16(RAW_W, true), ...u16(RAW_H, true), 0, 0, 0],
+};
+
+async function confirm(fileBytes: Uint8Array<ArrayBuffer>, mimeType = "image/jpeg") {
   mockState.fileBytes = fileBytes;
+  mockState.mimeType = mimeType;
   const req = new Request("http://localhost/api/projects/p1/images/img-1/confirm", {
     method: "POST",
   }) as unknown as Parameters<typeof POST>[0];
@@ -123,6 +190,9 @@ async function confirm(fileBytes: Uint8Array<ArrayBuffer>) {
 beforeEach(() => {
   mockState.workspaceId = "workspace-1";
   mockState.fileBytes = new Uint8Array(0);
+  mockState.mimeType = "image/jpeg";
+  mockState.storedSize = null;
+  mockState.downloads = 0;
   mockState.updates = [];
 });
 
@@ -175,5 +245,86 @@ describe("POST /api/projects/[id]/images/[imageId]/confirm", () => {
     expect(res.status).toBe(200);
     const [w, h] = swapped ? [RAW_H, RAW_W] : [RAW_W, RAW_H];
     expect(mockState.updates[0]).toMatchObject({ width_px: w, height_px: h });
+  });
+
+  it("accepts a PNG declared as image/png", async () => {
+    const res = await confirm(pngHeader(), "image/png");
+
+    expect(res.status).toBe(200);
+    expect(mockState.updates[0]).toMatchObject({
+      mime_type: "image/png",
+      width_px: RAW_W,
+      height_px: RAW_H,
+    });
+  });
+
+  it.each(Object.keys(FOREIGN_HEADERS))(
+    "rejects a crafted %s file at detection, before its parser runs",
+    async (type) => {
+      const res = await confirm(new Uint8Array(FOREIGN_HEADERS[type]));
+
+      expect(res.status).toBe(422);
+      // "disabled file type" is thrown by image-size's lookup before the
+      // format's calculate() is entered, so the vulnerable parser never runs.
+      expect(await res.json()).toEqual({
+        error: {
+          code: "unprocessable",
+          message: `Could not decode image header: disabled file type: ${type}`,
+        },
+      });
+      expect(mockState.updates).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    ["PNG bytes declared as image/jpeg", pngHeader, "image/jpeg", "png"],
+    ["JPEG bytes declared as image/png", () => jpegHeader(), "image/png", "jpg"],
+  ])("rejects %s", async (_label, bytes, declaredMime, decodedType) => {
+    const res = await confirm(bytes(), declaredMime);
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: {
+        code: "unprocessable",
+        message: `Image content (${decodedType}) does not match its declared type '${declaredMime}'`,
+      },
+    });
+    expect(mockState.updates).toHaveLength(0);
+  });
+
+  it.each(["image/webp", "image/tiff", "image/heic"])(
+    "rejects stored mime %s before downloading the file",
+    async (mime) => {
+      const res = await confirm(jpegHeader(), mime);
+
+      expect(res.status).toBe(422);
+      expect(await res.json()).toEqual({
+        error: {
+          code: "unprocessable",
+          message: `Unsupported image type '${mime}'. Allowed: JPEG, PNG.`,
+        },
+      });
+      expect(mockState.downloads).toBe(0);
+      expect(mockState.updates).toHaveLength(0);
+    },
+  );
+
+  it("rejects a stored object over the 20 MB upload-urls limit before downloading it", async () => {
+    mockState.storedSize = 20_971_521;
+    const res = await confirm(jpegHeader());
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: { code: "unprocessable", message: "File exceeds maximum size of 20 MB" },
+    });
+    expect(mockState.downloads).toBe(0);
+    expect(mockState.updates).toHaveLength(0);
+
+    // Boundary: exactly 20 MB is still accepted.
+    mockState.storedSize = 20_971_520;
+    const ok = await confirm(jpegHeader());
+
+    expect(ok.status).toBe(200);
+    expect(mockState.updates[0]).toMatchObject({ status: "uploaded", size_bytes: 20_971_520 });
   });
 });

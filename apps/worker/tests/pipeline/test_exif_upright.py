@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-from PIL import Image, ImageChops, ImageStat
+from PIL import Image, ImageChops, ImageStat, UnidentifiedImageError
 
 from app.pipeline import stage_b, stage_c
 from app.pipeline.align import AlignedBox, AlignResult
@@ -122,6 +122,33 @@ def test_open_upright_returns_the_upright_scene(orientation: int) -> None:
 def test_upright_size_matches_open_upright(fmt: str, orientation: int | None) -> None:
     img_bytes = _upright_baked(fmt) if orientation is None else _tagged(orientation, fmt)
     assert upright_size(img_bytes) == open_upright(img_bytes).size == (_UPRIGHT_W, _UPRIGHT_H)
+
+
+@pytest.mark.parametrize("fmt", ["JPEG", "PNG", "WEBP", "TIFF"])
+def test_allowlisted_formats_decode(fmt: str) -> None:
+    img_bytes = _encode(_upright_scene(), fmt, None)
+    assert upright_size(img_bytes) == open_upright(img_bytes).size == (_UPRIGHT_W, _UPRIGHT_H)
+
+
+def test_mpo_phone_jpeg_still_decodes() -> None:
+    """Multi-picture JPEGs (some phones write them) open through the JPEG plugin."""
+    buf = io.BytesIO()
+    _upright_scene().save(buf, format="MPO", save_all=True, append_images=[_upright_scene()])
+    with Image.open(io.BytesIO(buf.getvalue())) as premise:
+        assert premise.format == "MPO"
+    assert upright_size(buf.getvalue()) == open_upright(buf.getvalue()).size
+    assert open_upright(buf.getvalue()).size == (_UPRIGHT_W, _UPRIGHT_H)
+
+
+@pytest.mark.parametrize("fmt", ["GIF", "BMP", "ICO"])
+def test_non_allowlisted_formats_are_refused(fmt: str) -> None:
+    img_bytes = _encode(_upright_scene(), fmt, None)
+    with Image.open(io.BytesIO(img_bytes)) as premise:  # unrestricted Pillow decodes it
+        assert premise.format == fmt
+    with pytest.raises(UnidentifiedImageError):
+        open_upright(img_bytes)
+    with pytest.raises(UnidentifiedImageError):
+        upright_size(img_bytes)
 
 
 # ---------------------------------------------------------------------------

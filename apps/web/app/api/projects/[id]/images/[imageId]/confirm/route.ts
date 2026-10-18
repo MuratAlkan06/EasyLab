@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { imageSize } from "image-size";
+import { disableTypes, imageSize, types as imageSizeTypes } from "image-size";
 import { supabase } from "@/lib/supabase";
 import { getWorkspaceId } from "@/lib/workspace";
 import {
@@ -20,13 +20,21 @@ const ConfirmSchema = z.object({
   height_px: z.number().int().min(1).optional(),
 });
 
-const ALLOWED_MIME = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/tiff",
+// Accepted stored mime -> the image-size type its bytes must decode as. JPEG
+// and PNG only, matching upload-urls validation.
+const IMAGE_TYPE_BY_MIME = new Map<string, string>([
+  ["image/jpeg", "jpg"],
+  ["image/png", "png"],
 ]);
-const MAX_BYTES = 52_428_800; // 50 MB — must match upload-urls validation
+// Every other image-size parser is disabled, so a crafted file of another
+// format is rejected at detection and never reaches that format's parser
+// (CVE-2025-71329/71330: infinite loops in the ICNS/JXL/HEIF parsers).
+// Derived from the library's own list so newly added parsers are off too.
+const ENABLED_IMAGE_TYPES = new Set(IMAGE_TYPE_BY_MIME.values());
+const DISABLED_IMAGE_TYPES = imageSizeTypes.filter(
+  (t) => !ENABLED_IMAGE_TYPES.has(t),
+);
+const MAX_BYTES = 20_971_520; // 20 MB — matches upload-urls validation
 const MIN_DIMENSION_PX = 16; // anything smaller is unusable for annotation
 // EXIF orientations whose display transform rotates the stored pixels by 90°
 // (transpose, rotate 90° CW, transverse, rotate 90° CCW), swapping the axes.
@@ -97,11 +105,12 @@ export async function POST(
   const storedMime = stored.metadata?.mimetype;
   const storedSize = stored.metadata?.size;
 
-  if (!storedMime || !ALLOWED_MIME.has(storedMime)) {
+  const expectedType = storedMime ? IMAGE_TYPE_BY_MIME.get(storedMime) : undefined;
+  if (!expectedType) {
     return errorResponse(
       422,
       "unprocessable",
-      `Unsupported image type${storedMime ? ` '${storedMime}'` : ""}. Allowed: JPEG, PNG, WebP, TIFF.`
+      `Unsupported image type${storedMime ? ` '${storedMime}'` : ""}. Allowed: JPEG, PNG.`
     );
   }
 
@@ -143,11 +152,17 @@ export async function POST(
     );
   }
 
+  let decodedType: string | undefined;
   let decodedWidth: number;
   let decodedHeight: number;
   try {
     const buf = new Uint8Array(await fileBlob.arrayBuffer());
+    // Re-applied before every decode: the disabled set is process-global and
+    // any other importer of image-size could replace it. imageSize is
+    // synchronous, so nothing can interleave between the two calls.
+    disableTypes(DISABLED_IMAGE_TYPES);
     const dims = imageSize(buf);
+    decodedType = dims.type;
     if (!dims.width || !dims.height) {
       throw new Error("decoder returned no dimensions");
     }
@@ -159,6 +174,14 @@ export async function POST(
       422,
       "unprocessable",
       `Could not decode image header: ${e instanceof Error ? e.message : "unknown error"}`,
+    );
+  }
+
+  if (decodedType !== expectedType) {
+    return errorResponse(
+      422,
+      "unprocessable",
+      `Image content (${decodedType ?? "unknown"}) does not match its declared type '${storedMime}'`,
     );
   }
 

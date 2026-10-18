@@ -21,6 +21,12 @@ from PIL import ExifTags, Image, ImageOps
 # (TRANSPOSE, ROTATE_270, TRANSVERSE, ROTATE_90).
 _AXIS_SWAPPING_ORIENTATIONS = frozenset({5, 6, 7, 8})
 
+# Pillow plugins allowed to decode uploaded bytes. The product accepts JPG/PNG
+# (WEBP/TIFF kept as a margin); restricting ``Image.open`` keeps crafted files
+# from reaching Pillow's rarer, riskier parsers. "JPEG" also yields MPO, which
+# Pillow opens through the JPEG plugin.
+_UPLOAD_FORMATS = ("JPEG", "PNG", "WEBP", "TIFF")
+
 # Stage A targets Gemini's optimal input edge length and a high-quality JPEG.
 STAGE_A_LONGEST_EDGE_PX = 1568
 STAGE_A_JPEG_QUALITY = 90
@@ -41,7 +47,7 @@ def open_upright(img_bytes: bytes) -> Image.Image:
     The returned image is fully loaded and independent of ``img_bytes``. With
     no orientation to apply it is a pixel-identical copy of the raw decode.
     """
-    with Image.open(io.BytesIO(img_bytes)) as img:
+    with Image.open(io.BytesIO(img_bytes), formats=_UPLOAD_FORMATS) as img:
         img.load()
         return transpose_exif(img)
 
@@ -53,7 +59,7 @@ def upright_size(img_bytes: bytes) -> tuple[int, int]:
     ``ImageOps.exif_transpose`` does (``getexif()``), swapping the axes for
     orientations 5-8.
     """
-    with Image.open(io.BytesIO(img_bytes)) as img:
+    with Image.open(io.BytesIO(img_bytes), formats=_UPLOAD_FORMATS) as img:
         width, height = img.size
         orientation = img.getexif().get(ExifTags.Base.Orientation, 1)
     if orientation in _AXIS_SWAPPING_ORIENTATIONS:

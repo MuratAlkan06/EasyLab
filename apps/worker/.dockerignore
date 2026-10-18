@@ -16,9 +16,10 @@
 .ruff_cache
 .mypy_cache
 
-# Eval harness outputs and private originals (may contain people)
-eval/out
-eval/fixtures_private
+# Offline eval harness: fixtures, outputs, private originals (may contain
+# people), and a runner that can call Gemini with the prod key outside the
+# worker's spend controls. Not needed at runtime.
+eval/
 
 # Tests are not needed at runtime
 tests
