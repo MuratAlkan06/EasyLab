@@ -45,6 +45,19 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    @property
+    def detector_version(self) -> str:
+        """``model_versions.detector`` for Stage B/C cells (ADR-007 A6).
+
+        Stage B detection is ``app.pipeline.align``; bump ``align-vN`` when its
+        algorithm or thresholds change. Embeds the OpenCV build because results
+        are only bit-identical within one OpenCV version. Not env-overridable,
+        so the provenance can't drift from the code that ran.
+        """
+        import cv2
+
+        return f"align-v1+opencv{cv2.__version__}"
+
     class Config:
         env_file = ".env"
 

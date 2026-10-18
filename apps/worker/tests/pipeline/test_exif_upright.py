@@ -9,8 +9,6 @@ raw pixel grid a camera would write for each orientation, tagged with that
 orientation, so an EXIF-aware reader turns it back into the scene. PNG
 fixtures are lossless and allow byte-exact comparisons; JPEG fixtures cover the
 format phones actually produce.
-
-Deliberately numpy-free (see tests/eval/test_eval_harness.py for why).
 """
 
 from __future__ import annotations
@@ -24,10 +22,10 @@ import pytest
 from PIL import Image, ImageChops, ImageStat
 
 from app.pipeline import stage_b, stage_c
+from app.pipeline.align import AlignedBox, AlignResult
 from app.pipeline.crop_utils import compute_crop_rect, crop_and_encode
 from app.pipeline.debug_overlay import OverlayBox, render_overlay
 from app.pipeline.image_utils import open_upright, upright_size
-from app.pipeline.schemas import DetectedField, DetectionResponse
 
 _ORIENTATION_TAG = 0x0112
 
@@ -152,25 +150,26 @@ async def test_stage_b_backfills_upright_dimensions_and_hands_them_to_stage_c() 
         "height_px": None,
     }
     field = {"id": uuid4(), "field_name": "Voltage", "semantic_description": "d"}
-    response = DetectionResponse(
-        fields=[
-            DetectedField(
-                field_name="Voltage", found=True, box=[100, 200, 300, 400], box_confidence=0.9
-            )
-        ]
+    box = {"x": 0.2, "y": 0.1, "width": 0.2, "height": 0.2}
+    response = AlignResult(
+        fields={field["id"]: AlignedBox(box, 0.85, "homography")},
+        h_status="strong",
+        matches=100,
+        inliers=90,
+        homography=None,
     )
     detected: dict = {}
 
     with (
         patch.object(stage_b, "_download_image_bytes", return_value=_tagged(6, "JPEG")),
-        patch.object(stage_b, "_call_with_retry", new=AsyncMock(return_value=response)),
+        patch.object(stage_b, "align_target", return_value=response),
     ):
         await stage_b._process_image(
             pool,
             job={"id": uuid4(), "project_id": uuid4()},
             fields=[field],
             task=task,
-            client=object(),
+            reference=object(),
             detected=detected,
             progress_lock=asyncio.Lock(),
         )

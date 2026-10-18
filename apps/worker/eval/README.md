@@ -16,15 +16,16 @@ From `apps/worker` (so `pydantic-settings` reads `apps/worker/.env`):
 
 ```bash
 .venv/bin/python eval/run_eval.py --backend reference     # offline baseline, no network
-.venv/bin/python eval/run_eval.py --backend gemini        # today's production Stage B (paid)
+.venv/bin/python eval/run_eval.py --backend align         # production Stage B (Slice 3), offline
+.venv/bin/python eval/run_eval.py --backend gemini        # pre-Slice-3 Gemini detector (paid)
 .venv/bin/python eval/run_eval.py --backend reference --iou-threshold 0.7
 ```
 
 | backend     | what it predicts                                                                 | network |
 |-------------|----------------------------------------------------------------------------------|---------|
 | `reference` | the reference image's GT box for each field (= Stage B's `reference_box` fallback) | no      |
-| `align`     | homography reference-box transfer: **lands in Slice 3** (stub exits)             | no      |
-| `gemini`    | the real production call: `preprocess_for_stage_b` → `stage_b._call_with_retry` → `call_stage_b` (same prompt, model, retry) → the same acceptance ladder (confidence ≥ 0.30, `is_box_valid`, 0.55 reference fallback) | yes, ~1 Pro call per target |
+| `align`     | production Stage B: `align.prepare_reference` once, then `align.align_target` per target (AKAZE + RANSAC homography + NCC, same module and constants as `stage_b`) → the same acceptance ladder (confidence ≥ 0.30, `is_box_valid`, 0.55 reference fallback). Deterministic. | no      |
+| `gemini`    | the pre-Slice-3 Gemini detector: `preprocess_for_stage_b` → `call_stage_b` (same prompt, model, 2-attempt retry) → the same acceptance ladder | yes, ~1 Pro call per target |
 
 `gemini` skips with a message when `GEMINI_API_KEY` is unset or
 `google-genai` is not importable. It sends each field's
@@ -40,7 +41,10 @@ harness can never reach the real Supabase or Postgres.
 Outputs (gitignored) go to `eval/out/<backend>/<fixture-set>/`:
 `metrics.json` holds every number plus per-pair boxes and sources, and
 `overlays/<image>.jpg` shows the GT box in **green** and the prediction in
-**blue** (label = field, IoU, source).
+**blue** (label = field, IoU, source). Per-image wall-clock latency goes to
+`timing.json` instead of `metrics.json`, so `metrics.json` stays bit-identical
+across runs of a deterministic backend (`reference`, `align`) in one
+environment. The report prints mean/max latency.
 
 ## Scoring space and EXIF (read before trusting the exif6 row)
 

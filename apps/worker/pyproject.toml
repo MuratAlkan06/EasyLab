@@ -11,7 +11,9 @@ dependencies = [
     "supabase>=2.10",
     "google-genai>=1.0",
     "pillow>=11.0",
-    "opencv-python-headless>=4.10",
+    # Exact pin (ADR-007 A6): Stage B alignment is bit-identical only within
+    # one OpenCV build; bump deliberately and re-run eval/run_eval.py.
+    "opencv-python-headless==4.13.0.92",
     "tenacity>=9.0",
     "structlog>=24.4",
     "alembic>=1.14",

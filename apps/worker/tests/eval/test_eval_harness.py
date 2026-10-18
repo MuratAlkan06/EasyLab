@@ -5,10 +5,6 @@ them to pin the two things later slices rely on:
 
 * the EXIF raw->upright box mapping (Slice 2's acceptance reads the exif6 row),
 * the committed fixtures/ground truth stay valid and metadata-free (privacy).
-
-Deliberately numpy-free: tests/pipeline/test_paddle_ocr.py only installs its
-numpy shim when numpy has not been imported yet, so importing it here (this
-package is collected first) would change that test's behaviour.
 """
 
 from __future__ import annotations

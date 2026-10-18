@@ -205,7 +205,7 @@ async def _write_cell(
     """Upsert a cells row (one row per (job, image, field))."""
     model_versions = json.dumps(
         {
-            "detector": settings.gemini_detection_model,
+            "detector": settings.detector_version,
             "extractor": settings.gemini_extraction_model,
         }
     )

@@ -7,8 +7,9 @@ worst case per image. Overlay JPEGs (GT vs prediction) go to ``eval/out/``.
 Backends:
   reference  predicted box = the reference image's GT box for that field
              (simulates Stage B's reference_box fallback). Offline, no network.
-  align      homography transfer — lands in Slice 3.
-  gemini     today's production Stage B call (key-gated, network, costs money).
+  align      production Stage B (Slice 3): app.pipeline.align homography +
+             NCC transfer through Stage B's acceptance ladder. Offline.
+  gemini     the pre-Slice-3 Gemini detector (key-gated, network, costs money).
 
 Scoring space: ground truth is UPRIGHT (EXIF applied). A predicted box is what
 Stage B hands to Stage C, and Stage C crops it from whatever canvas
@@ -20,6 +21,7 @@ The harness imports pipeline modules; nothing in ``app`` imports the harness.
 Usage (from apps/worker)::
 
     python eval/run_eval.py --backend reference
+    python eval/run_eval.py --backend align
     python eval/run_eval.py --backend gemini --iou-threshold 0.5
 """
 
@@ -125,7 +127,7 @@ def to_upright(box: Box, info: CanvasInfo) -> Box:
 @dataclass
 class Prediction:
     box: Box | None  # as handed to Stage C (normalized vs. the original image)
-    source: str  # "reference" | "gemini" | "fallback" | "failed"
+    source: str  # "reference" | "gemini" | an align method | "fallback" | "failed"
     confidence: float | None = None
     detector_box: Box | None = None  # raw detector output, even if rejected
 
@@ -161,7 +163,54 @@ def run_reference(gt: GroundTruth, fields: list[dict]) -> dict[str, ImageResult]
 
 
 def run_align(gt: GroundTruth, fields: list[dict]) -> dict[str, ImageResult]:
-    raise SystemExit("align backend lands in Slice 3")
+    """Production Stage B per target: reference features prepared once, then
+    ``align.align_target`` and the same acceptance ladder as
+    ``stage_b._process_image``. Same module, same constants: no eval-only knobs.
+    Latency is wall time of ``align_target`` (decode + features + H + NCC)."""
+    from app.pipeline import align, stage_b
+
+    t0 = time.perf_counter()
+    reference = align.prepare_reference(
+        gt.path(gt.reference).read_bytes(),
+        {f["field_name"]: f["reference_box"] for f in fields},
+    )
+    print(
+        f"align backend: reference prepared in {time.perf_counter() - t0:.3f}s "
+        f"({len(reference.points)} masked features)"
+    )
+
+    out = {}
+    for target in gt.targets:
+        raw = gt.path(target).read_bytes()
+        width, height = stage_b._open_dimensions(raw)
+        t0 = time.perf_counter()
+        result = align.align_target(reference, raw)
+        latency = time.perf_counter() - t0
+
+        preds = {}
+        for f in fields:
+            name, ref_box = f["field_name"], f["reference_box"]
+            det = result.fields.get(name)
+            raw_box = det.box if det is not None and det.method != align.METHOD_FALLBACK else None
+            conf = det.box_confidence if det is not None else 0.0
+            if (
+                raw_box is not None
+                and conf >= stage_b._MIN_BOX_CONFIDENCE
+                and is_box_valid(raw_box, width, height)
+            ):
+                preds[name] = Prediction(raw_box, det.method, conf, raw_box)
+            elif ref_box and is_box_valid(ref_box, width, height):
+                preds[name] = Prediction(
+                    ref_box, "fallback", stage_b._REFERENCE_BOX_CONFIDENCE, raw_box
+                )
+            else:
+                preds[name] = Prediction(None, "failed", conf, raw_box)
+        print(
+            f"  {target.file}: {latency * 1000:.0f} ms  H={result.h_status} "
+            f"matches={result.matches} inliers={result.inliers}"
+        )
+        out[target.file] = ImageResult(preds, latency)
+    return out
 
 
 def gemini_unavailable_reason() -> str | None:
@@ -180,12 +229,21 @@ def gemini_unavailable_reason() -> str | None:
 
 
 def run_gemini(gt: GroundTruth, fields: list[dict]) -> dict[str, ImageResult]:
-    """Reproduce production Stage B per target: same preprocessing, prompt,
-    model, retry, and acceptance ladder as ``stage_b._process_image``."""
+    """Reproduce the pre-Slice-3 Gemini Stage B per target: same preprocessing,
+    prompt, model, retry (2 attempts, 2 s apart), and acceptance ladder."""
+    from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
+
     from app.pipeline import stage_b
-    from app.pipeline.gemini import get_client
+    from app.pipeline.gemini import call_stage_b, get_client
     from app.pipeline.image_utils import preprocess_for_stage_b
     from app.settings import settings
+
+    async def call_with_retry(image_bytes: bytes):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(2), wait=wait_fixed(2.0), reraise=True
+        ):
+            with attempt:
+                return await call_stage_b(client, model, image_bytes, fields)
 
     client = get_client()
     model = settings.gemini_detection_model
@@ -227,7 +285,7 @@ def run_gemini(gt: GroundTruth, fields: list[dict]) -> dict[str, ImageResult]:
         async with sem:
             t0 = time.perf_counter()
             try:
-                parsed = await stage_b._call_with_retry(client, model, image_bytes, fields)
+                parsed = await call_with_retry(image_bytes)
                 error = None
             except Exception as exc:  # noqa: BLE001 — production falls back on any error
                 parsed, error = None, f"{type(exc).__name__}: {exc}"[:300]
@@ -385,7 +443,6 @@ def report(
                 "worst_field": worst.field,
                 "worst_iou": worst.iou,
                 "sources": srcs,
-                "latency_s": round(results[target.file].latency_s, 4),
                 "error": results[target.file].error,
             }
         )
@@ -409,13 +466,15 @@ def report(
                 continue
             dets = [p.detector_iou for p in ps if p.detector_iou is not None]
             raw = f"{sum(dets) / len(dets):.3f}" if dets else "-"
-            counts = [sum(p.source == s for p in ps) for s in ("gemini", "fallback", "failed")]
-            lines.append(f"{fname:<{w}}{counts[0]:>9}{counts[1]:>9}{counts[2]:>7}{raw:>9}")
+            fallback = sum(p.source == "fallback" for p in ps)
+            failed = sum(p.source == "failed" for p in ps)
+            accepted = len(ps) - fallback - failed
+            lines.append(f"{fname:<{w}}{accepted:>9}{fallback:>9}{failed:>7}{raw:>9}")
         lat = [r.latency_s for r in results.values()]
         errs = sum(r.error is not None for r in results.values())
         lines.append(
-            f"latency/image: mean {sum(lat) / len(lat):.1f}s  max {max(lat):.1f}s  "
-            f"calls failed after retry: {errs}/{len(lat)}"
+            f"latency/image: mean {sum(lat) / len(lat):.3f}s  max {max(lat):.3f}s  "
+            f"detector errors: {errs}/{len(lat)}"
         )
     if notes:
         lines += ["", "Notes:"] + [f"  - {n}" for n in notes]
@@ -494,7 +553,11 @@ def main() -> None:
         out_dir = args.out / args.backend / set_name
         write_overlays(gt, pairs, out_dir / "overlays")
         (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
-        print(f"\nwrote {out_dir / 'metrics.json'} and {len(gt.targets)} overlays\n")
+        # Wall-clock timing varies run to run, so it stays out of metrics.json
+        # (which must be bit-identical across runs for deterministic backends).
+        timing = {f: round(r.latency_s, 6) for f, r in results.items()}
+        (out_dir / "timing.json").write_text(json.dumps({"latency_s": timing}, indent=2))
+        print(f"\nwrote {out_dir / 'metrics.json'}, timing.json and {len(gt.targets)} overlays\n")
 
 
 if __name__ == "__main__":
