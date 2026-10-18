@@ -55,28 +55,10 @@ _REFERENCE_BOX_CONFIDENCE = 0.55
 _HEARTBEAT_INTERVAL_SECONDS = 5.0
 
 
-def convert_box_to_normalized(box: list[int]) -> dict[str, float]:
-    """Convert a Gemini ``[ymin, xmin, ymax, xmax]`` 0..1000 box to normalized 0..1.
-
-    No longer used by Stage B itself (ADR-007); kept for the eval harness's
-    legacy ``gemini`` backend until the Slice 4 cleanup.
-
-    Always clamps to ``[0, 1]`` so out-of-range output from the model never
-    propagates downstream. Negative widths/heights from inverted boxes also
-    clamp to 0; the caller is expected to reject such boxes via ``is_box_valid``.
-    """
-    ymin, xmin, ymax, xmax = box
-    x = max(0.0, min(1.0, xmin / 1000.0))
-    y = max(0.0, min(1.0, ymin / 1000.0))
-    width = max(0.0, min(1.0, (xmax - xmin) / 1000.0))
-    height = max(0.0, min(1.0, (ymax - ymin) / 1000.0))
-    return {"x": x, "y": y, "width": width, "height": height}
-
-
 async def _load_template_fields(pool: asyncpg.Pool, project_id) -> list[dict]:
     rows = await pool.fetch(
         """
-        SELECT id, field_name, semantic_description, reference_box
+        SELECT id, field_name, reference_box
         FROM template_fields
         WHERE project_id = $1
         ORDER BY display_order
@@ -92,7 +74,6 @@ async def _load_template_fields(pool: asyncpg.Pool, project_id) -> list[dict]:
             {
                 "id": r["id"],
                 "field_name": r["field_name"],
-                "semantic_description": r["semantic_description"],
                 "reference_box": box,
             }
         )
@@ -459,7 +440,7 @@ async def _process_image(
 
             # Collect overlay entries for the debug-flag JPEG. Always include
             # the user's reference annotation when present so reviewers can
-            # see what the model was supposed to find.
+            # see what the detector was supposed to find.
             if settings.stage_b_debug:
                 if ref_box:
                     overlay_boxes.append(

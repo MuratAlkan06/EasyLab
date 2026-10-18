@@ -10,11 +10,8 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model_pro: str = "gemini-2.5-pro"
     gemini_model_flash: str = "gemini-2.5-flash"
-    # Stage B (region detection) — separate alias so the deployment can swap
-    # detection independently from template generation if needed.
-    gemini_detection_model: str = "gemini-2.5-pro"
-    # Stage C (value extraction) — Flash by default for cost/latency. Same
-    # alias rationale as detection: deployments can swap independently.
+    # Stage C (value extraction) — Flash by default for cost/latency. Separate
+    # alias so deployments can swap extraction independently.
     gemini_extraction_model: str = "gemini-2.5-flash"
 
     internal_shared_secret: str
@@ -35,11 +32,11 @@ class Settings(BaseSettings):
     # loading the paddle stack at runtime (e.g. CI, local dev without OCR).
     ocr_enabled: bool = True
 
-    # Stage B diagnostics. When true, each processed image gets:
-    #   * per-field structlog events with raw Gemini box coords + IoU vs the
-    #     user's reference_box
-    #   * a JPEG overlay written to Supabase Storage at
-    #     ``projects/{project_id}/debug/{job_id}/{image_id}.jpg``
+    # Stage B diagnostics. When true, each processed image gets a JPEG overlay
+    # written to Supabase Storage at
+    # ``projects/{project_id}/debug/{job_id}/{image_id}.jpg``. The per-field
+    # ``stage_b.detector_raw`` events (raw detector box + IoU vs the user's
+    # reference_box) are logged regardless of this flag.
     # Off by default — flip on when investigating detection bugs.
     stage_b_debug: bool = False
 

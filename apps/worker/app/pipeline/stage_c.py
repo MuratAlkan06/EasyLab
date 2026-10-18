@@ -54,7 +54,7 @@ from app.settings import settings
 
 log = structlog.get_logger()
 
-# Two attempts total for the Gemini Flash extraction call (mirrors Stage B).
+# Two attempts total for the Gemini Flash extraction call (same policy as Stage A).
 _RETRY_WAIT_SECONDS = 2.0
 _MAX_ATTEMPTS = 2
 

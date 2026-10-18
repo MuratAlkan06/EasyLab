@@ -7,15 +7,16 @@ worst case per image. Overlay JPEGs (GT vs prediction) go to ``eval/out/``.
 Backends:
   reference  predicted box = the reference image's GT box for that field
              (simulates Stage B's reference_box fallback). Offline, no network.
-  align      production Stage B (Slice 3): app.pipeline.align homography +
-             NCC transfer through Stage B's acceptance ladder. Offline.
-  gemini     the pre-Slice-3 Gemini detector (key-gated, network, costs money).
+  align      production Stage B: app.pipeline.align homography + NCC transfer
+             through Stage B's acceptance ladder. Offline.
+  gemini     the pre-Phase-7 Gemini detector, frozen in ``legacy_gemini.py``
+             (key-gated, network, costs money). Kept for before/after numbers.
 
 Scoring space: ground truth is UPRIGHT (EXIF applied). A predicted box is what
 Stage B hands to Stage C, and Stage C crops it from whatever canvas
 ``stage_c._open_image`` returns. The harness asks Stage C for that canvas and
-maps the prediction into upright space before scoring, so EXIF handling bugs
-show up as low IoU (and fixing them in Slice 2 shows up as a jump).
+maps the prediction into upright space before scoring, so any EXIF handling
+regression shows up as low IoU on the exif6 fixture.
 
 The harness imports pipeline modules; nothing in ``app`` imports the harness.
 Usage (from apps/worker)::
@@ -77,7 +78,7 @@ _RAW_TO_UPRIGHT: dict[int, Callable[[float, float], tuple[float, float]]] = {
 
 
 def _stage_c_canvas(image_bytes: bytes) -> Image.Image:
-    """The image Stage C crops from — delegated so Slice 2's fix is picked up."""
+    """The image Stage C crops from — delegated, so scoring always uses Stage C's real canvas."""
     from app.pipeline.stage_c import _open_image
 
     return _open_image(image_bytes)
@@ -229,13 +230,13 @@ def gemini_unavailable_reason() -> str | None:
 
 
 def run_gemini(gt: GroundTruth, fields: list[dict]) -> dict[str, ImageResult]:
-    """Reproduce the pre-Slice-3 Gemini Stage B per target: same preprocessing,
-    prompt, model, retry (2 attempts, 2 s apart), and acceptance ladder."""
+    """Reproduce the pre-Phase-7 Gemini Stage B per target from the frozen
+    ``legacy_gemini`` snapshot: same preprocessing, prompt, model, retry
+    (2 attempts, 2 s apart), and acceptance ladder."""
+    import legacy_gemini
     from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
 
     from app.pipeline import stage_b
-    from app.pipeline.gemini import call_stage_b, get_client
-    from app.pipeline.image_utils import preprocess_for_stage_b
     from app.settings import settings
 
     async def call_with_retry(image_bytes: bytes):
@@ -243,10 +244,10 @@ def run_gemini(gt: GroundTruth, fields: list[dict]) -> dict[str, ImageResult]:
             stop=stop_after_attempt(2), wait=wait_fixed(2.0), reraise=True
         ):
             with attempt:
-                return await call_stage_b(client, model, image_bytes, fields)
+                return await legacy_gemini.call_stage_b(client, model, image_bytes, fields)
 
-    client = get_client()
-    model = settings.gemini_detection_model
+    client = legacy_gemini.make_client(settings.gemini_api_key)
+    model = legacy_gemini.MODEL
     sem = asyncio.Semaphore(settings.image_concurrency)
     print(f"gemini backend: model={model} targets={len(gt.targets)} fields={len(fields)}")
 
@@ -256,7 +257,7 @@ def run_gemini(gt: GroundTruth, fields: list[dict]) -> dict[str, ImageResult]:
         for f in fields:
             df, ref_box = by_name.get(f["field_name"]), f["reference_box"]
             raw_box = (
-                stage_b.convert_box_to_normalized(df.box)
+                legacy_gemini.convert_box_to_normalized(df.box)
                 if df is not None and df.box is not None
                 else None
             )
@@ -281,7 +282,7 @@ def run_gemini(gt: GroundTruth, fields: list[dict]) -> dict[str, ImageResult]:
     async def one(target: GTImage) -> tuple[str, ImageResult]:
         raw = gt.path(target).read_bytes()
         width, height = stage_b._open_dimensions(raw)
-        image_bytes = preprocess_for_stage_b(raw)
+        image_bytes = legacy_gemini.preprocess(raw)
         async with sem:
             t0 = time.perf_counter()
             try:

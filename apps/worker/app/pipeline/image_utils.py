@@ -25,11 +25,6 @@ _AXIS_SWAPPING_ORIENTATIONS = frozenset({5, 6, 7, 8})
 STAGE_A_LONGEST_EDGE_PX = 1568
 STAGE_A_JPEG_QUALITY = 90
 
-# Stage B uses the same edge length but a slightly lower quality. Detection
-# needs less fine detail than the reference-image template generation pass.
-STAGE_B_LONGEST_EDGE_PX = 1568
-STAGE_B_JPEG_QUALITY = 88
-
 
 def transpose_exif(img: Image.Image) -> Image.Image:
     """Apply EXIF orientation tag so the image is upright.
@@ -98,9 +93,3 @@ def preprocess_for_stage_a(img_bytes: bytes) -> bytes:
     """Full Stage A preprocessing: EXIF transpose -> resize 1568px -> JPEG q=90."""
     img = resize_longest_edge(open_upright(img_bytes), STAGE_A_LONGEST_EDGE_PX)
     return encode_jpeg(img, STAGE_A_JPEG_QUALITY)
-
-
-def preprocess_for_stage_b(img_bytes: bytes) -> bytes:
-    """Full Stage B preprocessing: EXIF transpose -> resize 1568px -> JPEG q=88."""
-    img = resize_longest_edge(open_upright(img_bytes), STAGE_B_LONGEST_EDGE_PX)
-    return encode_jpeg(img, STAGE_B_JPEG_QUALITY)

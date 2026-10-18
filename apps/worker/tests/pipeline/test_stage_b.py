@@ -1,4 +1,4 @@
-"""Unit tests for Stage B (region detection) box conversion and orchestration.
+"""Unit tests for Stage B (region detection) orchestration.
 
 The aligner is mocked (its own tests live in test_align.py). No real network
 access. No database — the asyncpg pool is replaced with an ``AsyncMock`` so we
@@ -7,6 +7,7 @@ can assert on the SQL calls the orchestrator makes without standing up Postgres.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -16,38 +17,6 @@ from structlog.testing import capture_logs
 
 from app.pipeline import stage_b
 from app.pipeline.align import AlignedBox, AlignResult
-from app.pipeline.stage_b import convert_box_to_normalized
-
-# ---------------------------------------------------------------------------
-# Box coordinate conversion (pure function)
-# ---------------------------------------------------------------------------
-
-
-def test_box_conversion_valid() -> None:
-    """[ymin=100, xmin=200, ymax=300, xmax=400] → x=0.2 y=0.1 w=0.2 h=0.2."""
-    box = convert_box_to_normalized([100, 200, 300, 400])
-    assert box == {"x": 0.2, "y": 0.1, "width": 0.2, "height": 0.2}
-
-
-def test_box_conversion_clamps() -> None:
-    """Out-of-range values clamp to [0, 1]."""
-    # Negative ymin/xmin and > 1000 ymax/xmax. Clamp keeps everything in [0, 1].
-    box = convert_box_to_normalized([-50, -100, 1500, 1200])
-    assert 0.0 <= box["x"] <= 1.0
-    assert 0.0 <= box["y"] <= 1.0
-    assert 0.0 <= box["width"] <= 1.0
-    assert 0.0 <= box["height"] <= 1.0
-    # Ensure the underflow values clamped specifically to 0 rather than rounding.
-    assert box["x"] == 0.0
-    assert box["y"] == 0.0
-
-
-def test_box_conversion_inverted_clamps_to_zero_size() -> None:
-    """Inverted boxes (xmax < xmin) collapse to zero width/height, not negative."""
-    box = convert_box_to_normalized([400, 600, 200, 300])  # ymax<ymin, xmax<xmin
-    assert box["width"] == 0.0
-    assert box["height"] == 0.0
-
 
 # ---------------------------------------------------------------------------
 # Per-image orchestration — drives _process_image with mocks
@@ -79,11 +48,7 @@ def _make_task(*, width_px: int = 1000, height_px: int = 800) -> dict:
 
 
 def _make_field(field_name: str) -> dict:
-    return {
-        "id": uuid4(),
-        "field_name": field_name,
-        "semantic_description": f"semantic for {field_name}",
-    }
+    return {"id": uuid4(), "field_name": field_name}
 
 
 def _failed_cell_field_ids(pool: AsyncMock) -> list[Any]:
@@ -254,8 +219,6 @@ async def test_aligner_fallback_uses_reference_box_at_fallback_confidence() -> N
 @pytest.mark.asyncio
 async def test_failed_cells_record_the_aligner_version() -> None:
     """model_versions.detector names the aligner + the OpenCV build (A6)."""
-    import json
-
     import cv2
 
     f = _make_field("Voltage")
@@ -306,6 +269,26 @@ async def test_detector_raw_telemetry_and_align_latency_are_logged() -> None:
     (aligned_event,) = [e for e in logs if e["event"] == "stage_b.image.aligned"]
     assert aligned_event["align_ms"] >= 0
     assert aligned_event["h_status"] == "strong"
+
+
+@pytest.mark.asyncio
+async def test_load_template_fields_returns_only_what_the_aligner_uses() -> None:
+    """id + field_name + parsed reference_box. semantic_description is a Stage A
+    output the aligner never reads, so Stage B no longer selects it."""
+    field_id = uuid4()
+    pool = _stub_pool()
+    pool.fetch = AsyncMock(
+        return_value=[
+            {"id": field_id, "field_name": "Voltage", "reference_box": json.dumps(_REF_BOX)},
+            {"id": uuid4(), "field_name": "Current", "reference_box": None},
+        ]
+    )
+
+    fields = await stage_b._load_template_fields(pool, uuid4())
+
+    assert fields[0] == {"id": field_id, "field_name": "Voltage", "reference_box": _REF_BOX}
+    assert fields[1]["reference_box"] is None
+    assert "semantic_description" not in pool.fetch.await_args.args[0]
 
 
 @pytest.mark.asyncio

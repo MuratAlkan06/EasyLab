@@ -1,0 +1,27 @@
+# Build context is apps/worker (see docker-compose.yml). Keep secrets and
+# local/dev artifacts out of the image layer created by `COPY . .`.
+
+# Secrets — runtime config comes from the platform env / compose env_file.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Virtualenvs and Python build/cache junk
+.venv
+**/__pycache__
+**/*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Eval harness outputs and private originals (may contain people)
+eval/out
+eval/fixtures_private
+
+# Tests are not needed at runtime
+tests
+
+# OS
+**/.DS_Store

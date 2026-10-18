@@ -149,7 +149,7 @@ async def test_stage_b_backfills_upright_dimensions_and_hands_them_to_stage_c() 
         "width_px": None,
         "height_px": None,
     }
-    field = {"id": uuid4(), "field_name": "Voltage", "semantic_description": "d"}
+    field = {"id": uuid4(), "field_name": "Voltage"}
     box = {"x": 0.2, "y": 0.1, "width": 0.2, "height": 0.2}
     response = AlignResult(
         fields={field["id"]: AlignedBox(box, 0.85, "homography")},

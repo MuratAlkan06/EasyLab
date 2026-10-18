@@ -16,8 +16,8 @@ From `apps/worker` (so `pydantic-settings` reads `apps/worker/.env`):
 
 ```bash
 .venv/bin/python eval/run_eval.py --backend reference     # offline baseline, no network
-.venv/bin/python eval/run_eval.py --backend align         # production Stage B (Slice 3), offline
-.venv/bin/python eval/run_eval.py --backend gemini        # pre-Slice-3 Gemini detector (paid)
+.venv/bin/python eval/run_eval.py --backend align         # production Stage B, offline
+.venv/bin/python eval/run_eval.py --backend gemini        # pre-Phase-7 Gemini detector (paid)
 .venv/bin/python eval/run_eval.py --backend reference --iou-threshold 0.7
 ```
 
@@ -25,7 +25,13 @@ From `apps/worker` (so `pydantic-settings` reads `apps/worker/.env`):
 |-------------|----------------------------------------------------------------------------------|---------|
 | `reference` | the reference image's GT box for each field (= Stage B's `reference_box` fallback) | no      |
 | `align`     | production Stage B: `align.prepare_reference` once, then `align.align_target` per target (AKAZE + RANSAC homography + NCC, same module and constants as `stage_b`) → the same acceptance ladder (confidence ≥ 0.30, `is_box_valid`, 0.55 reference fallback). Deterministic. | no      |
-| `gemini`    | the pre-Slice-3 Gemini detector: `preprocess_for_stage_b` → `call_stage_b` (same prompt, model, 2-attempt retry) → the same acceptance ladder | yes, ~1 Pro call per target |
+| `gemini`    | the pre-Phase-7 Gemini detector, frozen in `legacy_gemini.py`: `preprocess` → `call_stage_b` (same prompt, model, 2-attempt retry) → the same acceptance ladder | yes, ~1 Pro call per target |
+
+The Gemini detector was deleted from `app` in Phase 7. `legacy_gemini.py` is a
+frozen snapshot of it (preprocessing, prompt, request config, response schema,
+box conversion), kept only so the before/after comparison stays reproducible.
+Don't update it to follow the pipeline. `google-genai` is imported only when
+this backend runs.
 
 `gemini` skips with a message when `GEMINI_API_KEY` is unset or
 `google-genai` is not importable. It sends each field's
@@ -131,7 +137,8 @@ locations, and verifies every output's metadata after writing.
   frame. For the HP 3468A it's the tinted readout strip, value plus `ADC`
   annunciator. When the window is tilted (perspective/roll) the box is its
   axis-aligned bounding box. It is **never** the printed VOLT/AMP labels,
-  nameplates or bezels; those labels are exactly what today's detector boxes.
+  nameplates or bezels; those labels are exactly what the pre-Phase-7 Gemini
+  detector boxed.
 
 Fields: `psu_volt_display`, `psu_amp_display`, `handheld_display` (Extech
 LCD), `bench_meter_display` (HP 3468A readout).

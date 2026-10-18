@@ -1,14 +1,14 @@
 """Render Stage B detection results onto a copy of the source image.
 
 The Stage B debug flag (``STAGE_B_DEBUG=true``) uses this to emit annotated
-JPEGs to Supabase Storage so we can eyeball what Gemini is actually boxing.
-It's the fastest path from "the cells table looks wrong" to "yep, the model
-boxed the AMP label again" without rebuilding the review UI.
+JPEGs to Supabase Storage so we can eyeball what the detector actually boxed.
+It's the fastest path from "the cells table looks wrong" to "yep, that box
+landed on the AMP label" without rebuilding the review UI.
 
 Color convention (matches the eventual review UI):
 
-* **green** — accepted Gemini detection
-* **red**   — rejected Gemini detection (low confidence or invalid geometry)
+* **green** — accepted detection
+* **red**   — rejected detection (low confidence or invalid geometry)
 * **blue**  — reference-box fallback
 * **yellow dashed** — the user's reference annotation (always drawn for context)
 
